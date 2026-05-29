@@ -29,8 +29,8 @@ export class TouchControls {
       .setStrokeStyle(3, 0xffffff, 0.7)
       .setDepth(901);
 
-    // ジャンプボタン（右側）
-    const jump = scene.add.container(W - 150, H - 96).setDepth(900);
+    // ジャンプボタン（技ボタンの左隣・右側ゾーン内）
+    const jump = scene.add.container(W - 360, H - 92).setDepth(900);
     const jumpCircle = scene.add.circle(0, 0, 50, 0x9be7ff, 0.32).setStrokeStyle(3, 0xffffff, 0.6);
     jumpCircle.setInteractive(new Phaser.Geom.Circle(0, 0, 50), Phaser.Geom.Circle.Contains);
     const jumpText = scene.add.text(0, 0, '⤴', {
