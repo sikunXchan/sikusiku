@@ -29,6 +29,7 @@ export const SKILLS: Record<string, Skill> = {
   shikkenDrive: {
     id: 'shikkenDrive',
     name: 'しっけんドライブ',
+    short: 'ドライブ',
     category: 'chargeBreak',
     baseDamage: 520, // 強烈な一撃
     range: 300,

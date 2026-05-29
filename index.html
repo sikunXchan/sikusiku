@@ -2,7 +2,17 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#5a4cd0" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="クマバトル" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <title>しくん &amp; ちゃくん バトル</title>
     <style>
       html, body {
@@ -12,10 +22,14 @@
         background: #0d0b1a;
         overflow: hidden;
         font-family: system-ui, sans-serif;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
       }
       #game {
-        width: 100vw;
-        height: 100vh;
+        position: fixed;
+        inset: 0;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -24,10 +38,50 @@
         image-rendering: pixelated;
         touch-action: none;
       }
+      /* 縦持ちのときは「横にしてね」オーバーレイを表示 */
+      #rotate {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background: linear-gradient(160deg, #1a1530, #2a2350);
+        color: #fff;
+        text-align: center;
+        padding: 24px;
+      }
+      #rotate .bear {
+        width: 96px;
+        height: 96px;
+      }
+      #rotate .phone {
+        font-size: 64px;
+        animation: rot 1.6s ease-in-out infinite;
+      }
+      #rotate h1 { font-size: 22px; margin: 0; }
+      #rotate p { font-size: 15px; opacity: 0.8; margin: 0; }
+      @keyframes rot {
+        0%, 40% { transform: rotate(0deg); }
+        60%, 100% { transform: rotate(-90deg); }
+      }
+      /* タッチ端末かつ縦向きのときだけ表示 */
+      @media (orientation: portrait) and (pointer: coarse) {
+        #rotate { display: flex; }
+        #game { display: none; }
+      }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <div id="rotate">
+      <img class="bear" src="/pwa-192x192.png" alt="" />
+      <div class="phone">📱</div>
+      <h1>横向きにしてね</h1>
+      <p>このゲームは横画面でプレイします<br />スマホを横に回してください</p>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

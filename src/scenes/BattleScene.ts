@@ -8,6 +8,7 @@ import { Effects } from '../fx/Effects';
 import { SimpleAI } from '../ai/SimpleAI';
 import { HealthBar } from '../ui/HealthBar';
 import { SkillBar } from '../ui/SkillBar';
+import { TouchControls } from '../ui/TouchControls';
 import type { Skill } from '../data/types';
 
 // メインのバトル画面。しくん(プレイヤー) vs ちゃくん(AI) のリアルタイム1対1。
@@ -24,6 +25,7 @@ export class BattleScene extends Phaser.Scene {
   private playerHpBar!: HealthBar;
   private enemyHpBar!: HealthBar;
   private skillBar!: SkillBar;
+  private touch!: TouchControls;
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private keyA!: Phaser.Input.Keyboard.Key;
@@ -82,6 +84,9 @@ export class BattleScene extends Phaser.Scene {
       (skill) => this.activateSkill(skill)
     );
 
+    // モバイル用タッチ操作（移動パッド + ジャンプ）
+    this.touch = new TouchControls(this, () => this.player.jump());
+
     // 入力
     const kb = this.input.keyboard!;
     this.cursors = kb.createCursorKeys();
@@ -131,8 +136,8 @@ export class BattleScene extends Phaser.Scene {
       this.player.stop();
       return;
     }
-    const left = this.cursors.left.isDown || this.keyA.isDown;
-    const right = this.cursors.right.isDown || this.keyD.isDown;
+    const left = this.cursors.left.isDown || this.keyA.isDown || this.touch.left;
+    const right = this.cursors.right.isDown || this.keyD.isDown || this.touch.right;
     const spd = this.player.def.stats.spd;
     if (left && !right) this.player.moveX(-spd);
     else if (right && !left) this.player.moveX(spd);
@@ -234,14 +239,14 @@ export class BattleScene extends Phaser.Scene {
       },
     });
 
-    const hint = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 96,
-      '移動: ←→ / A・D    ジャンプ: ↑ / Space    技: J(長押しでチャージ) / K / L',
+    const hint = this.add.text(GAME_WIDTH / 2, 116,
+      '左下で移動・ジャンプ / 右下の技ボタンで攻撃',
       {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '15px',
+        fontSize: '16px',
         color: '#cfc8ff',
       }).setOrigin(0.5).setDepth(900);
-    this.tweens.add({ targets: hint, alpha: 0, delay: 4000, duration: 800, onComplete: () => hint.destroy() });
+    this.tweens.add({ targets: hint, alpha: 0, delay: 4500, duration: 800, onComplete: () => hint.destroy() });
   }
 
   private buildBackground(): void {

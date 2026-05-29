@@ -27,6 +27,8 @@ export interface Skill {
   id: string;
   /** 表示名（日本語） */
   name: string;
+  /** ボタン用の短い表示名（省略時は name を使用）。 */
+  short?: string;
   category: SkillCategory;
   /** 技の基礎ダメージ（ダメージ計算式の basedamage）。攻撃でない技は 0。 */
   baseDamage: number;

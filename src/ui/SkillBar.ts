@@ -22,11 +22,13 @@ export class SkillBar {
     keys: string[],
     private onActivate: (skill: Skill) => void
   ) {
-    const size = 76;
-    const gap = 16;
+    // 格ゲー風に画面右下へ寄せる（右端から左へ並べる）。
+    const size = 82;
+    const gap = 12;
     const total = skills.length * size + (skills.length - 1) * gap;
-    const startX = scene.scale.width / 2 - total / 2 + size / 2;
-    const y = scene.scale.height - 52;
+    const rightMargin = 28;
+    const startX = scene.scale.width - rightMargin - total + size / 2;
+    const y = scene.scale.height - 60;
 
     skills.forEach((skill, i) => {
       const x = startX + i * (size + gap);
@@ -36,13 +38,15 @@ export class SkillBar {
       bg.setInteractive({ useHandCursor: true });
       bg.on('pointerdown', () => this.onActivate(skill));
 
-      const label = scene.add.text(0, -6, skill.name, {
+      const labelText = skill.short ?? skill.name;
+      // 文字数に応じてフォントを縮小し、ボタン内に収める
+      const fontPx = Phaser.Math.Clamp(Math.floor((size - 14) / labelText.length), 11, 16);
+      const label = scene.add.text(0, -6, labelText, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '14px',
+        fontSize: `${fontPx}px`,
         color: '#1a1a1a',
         fontStyle: 'bold',
         align: 'center',
-        wordWrap: { width: size - 8 },
       }).setOrigin(0.5);
 
       const keyLabel = scene.add.text(0, size / 2 - 14, `[${keys[i] ?? ''}]`, {

@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
 import { BattleScene } from './scenes/BattleScene';
+import { setupMobile } from './mobile';
+
+setupMobile();
 
 export const GAME_WIDTH = 960;
 export const GAME_HEIGHT = 540;
@@ -16,6 +19,9 @@ const config: Phaser.Types.Core.GameConfig = {
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
+  input: {
+    activePointers: 3, // 移動 + 技 の同時タッチを許可
   },
   physics: {
     default: 'arcade',
