@@ -1,88 +1,87 @@
 import Phaser from 'phaser';
 
-// モバイル用の画面タッチ操作。左下に移動パッド(←→)とジャンプ。
-// マルチタッチ対応：どの指(pointer)がどのボタンを押しているかを id で追跡する。
+// モバイル用の操作: 左半分のフローティング・ジョイスティック + 右側のジャンプボタン。
+// 技ボタンは SkillBar 側。マルチタッチ対応。
 
 export class TouchControls {
-  left = false;
-  right = false;
-  private heldBy = new Map<number, 'left' | 'right'>();
+  /** 横方向の入力。-1(左)〜+1(右)。デッドゾーン処理済み。 */
+  axisX = 0;
+
+  private base: Phaser.GameObjects.Arc;
+  private knob: Phaser.GameObjects.Arc;
+  private home: { x: number; y: number };
+  private pointerId: number | null = null;
+  private readonly radius = 78;
+  private readonly zoneRatio = 0.5; // 画面左半分をジョイスティック領域とする
 
   constructor(scene: Phaser.Scene, onJump: () => void) {
+    const W = scene.scale.width;
     const H = scene.scale.height;
-    const makeBtn = (
-      x: number,
-      y: number,
-      r: number,
-      label: string,
-      color: number
-    ): Phaser.GameObjects.Container => {
-      const c = scene.add.container(x, y).setDepth(900);
-      const circle = scene.add.circle(0, 0, r, color, 0.35).setStrokeStyle(3, 0xffffff, 0.6);
-      circle.setInteractive(
-        new Phaser.Geom.Circle(0, 0, r),
-        Phaser.Geom.Circle.Contains
-      );
-      const text = scene.add.text(0, 0, label, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: `${Math.round(r * 0.9)}px`,
-        color: '#ffffff',
-        fontStyle: 'bold',
-      }).setOrigin(0.5);
-      c.add([circle, text]);
-      c.setData('circle', circle);
-      return c;
-    };
+    this.home = { x: 160, y: H - 120 };
 
-    const leftBtn = makeBtn(78, H - 70, 44, '◀', 0x66ccff);
-    const rightBtn = makeBtn(186, H - 70, 44, '▶', 0x66ccff);
-    const jumpBtn = makeBtn(132, H - 168, 40, '⤴', 0x9be7ff);
+    // ジョイスティック本体
+    this.base = scene.add
+      .circle(this.home.x, this.home.y, this.radius, 0x66ccff, 0.16)
+      .setStrokeStyle(4, 0xffffff, 0.45)
+      .setDepth(900);
+    this.knob = scene.add
+      .circle(this.home.x, this.home.y, this.radius * 0.46, 0x66ccff, 0.45)
+      .setStrokeStyle(3, 0xffffff, 0.7)
+      .setDepth(901);
 
-    const press = (c: Phaser.GameObjects.Container) =>
-      (c.getData('circle') as Phaser.GameObjects.Arc).setAlpha(0.7);
-    const release = (c: Phaser.GameObjects.Container) =>
-      (c.getData('circle') as Phaser.GameObjects.Arc).setAlpha(0.35);
-
-    (leftBtn.getData('circle') as Phaser.GameObjects.Arc).on(
-      'pointerdown',
-      (p: Phaser.Input.Pointer) => {
-        this.heldBy.set(p.id, 'left');
-        press(leftBtn);
-        this.recompute();
-      }
-    );
-    (rightBtn.getData('circle') as Phaser.GameObjects.Arc).on(
-      'pointerdown',
-      (p: Phaser.Input.Pointer) => {
-        this.heldBy.set(p.id, 'right');
-        press(rightBtn);
-        this.recompute();
-      }
-    );
-    (jumpBtn.getData('circle') as Phaser.GameObjects.Arc).on('pointerdown', () => {
-      press(jumpBtn);
+    // ジャンプボタン（右側）
+    const jump = scene.add.container(W - 150, H - 96).setDepth(900);
+    const jumpCircle = scene.add.circle(0, 0, 50, 0x9be7ff, 0.32).setStrokeStyle(3, 0xffffff, 0.6);
+    jumpCircle.setInteractive(new Phaser.Geom.Circle(0, 0, 50), Phaser.Geom.Circle.Contains);
+    const jumpText = scene.add.text(0, 0, '⤴', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '40px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    jump.add([jumpCircle, jumpText]);
+    jumpCircle.on('pointerdown', () => {
+      jumpCircle.setAlpha(0.6);
       onJump();
-      scene.time.delayedCall(120, () => release(jumpBtn));
+      scene.time.delayedCall(120, () => jumpCircle.setAlpha(0.32));
     });
 
-    const onUp = (p: Phaser.Input.Pointer) => {
-      this.heldBy.delete(p.id);
-      release(leftBtn);
-      release(rightBtn);
-      // どちらかがまだ押されていれば見た目を戻す
-      for (const dir of this.heldBy.values()) {
-        if (dir === 'left') press(leftBtn);
-        if (dir === 'right') press(rightBtn);
-      }
-      this.recompute();
-    };
-    scene.input.on('pointerup', onUp);
-    scene.input.on('pointerupoutside', onUp);
-  }
+    // ── ジョイスティック入力 ──
+    scene.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (this.pointerId !== null) return;
+      if (p.x > W * this.zoneRatio) return; // 右側はジャンプ/技に任せる
+      this.pointerId = p.id;
+      // フローティング: 押した位置に土台を移動
+      const bx = Phaser.Math.Clamp(p.x, this.radius, W * this.zoneRatio);
+      const by = Phaser.Math.Clamp(p.y, this.radius, H - this.radius);
+      this.base.setPosition(bx, by).setAlpha(0.28);
+      this.knob.setPosition(bx, by).setAlpha(0.75);
+    });
 
-  private recompute(): void {
-    const dirs = [...this.heldBy.values()];
-    this.left = dirs.includes('left');
-    this.right = dirs.includes('right');
+    scene.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (p.id !== this.pointerId) return;
+      const dx = p.x - this.base.x;
+      const dy = p.y - this.base.y;
+      const dist = Math.hypot(dx, dy);
+      const clamped = Math.min(dist, this.radius);
+      const ang = Math.atan2(dy, dx);
+      this.knob.setPosition(
+        this.base.x + Math.cos(ang) * clamped,
+        this.base.y + Math.sin(ang) * clamped
+      );
+      let ax = (Math.cos(ang) * clamped) / this.radius;
+      if (Math.abs(ax) < 0.18) ax = 0; // デッドゾーン
+      this.axisX = ax;
+    });
+
+    const reset = (p: Phaser.Input.Pointer) => {
+      if (p.id !== this.pointerId) return;
+      this.pointerId = null;
+      this.axisX = 0;
+      this.base.setPosition(this.home.x, this.home.y).setAlpha(0.16);
+      this.knob.setPosition(this.home.x, this.home.y).setAlpha(0.45);
+    };
+    scene.input.on('pointerup', reset);
+    scene.input.on('pointerupoutside', reset);
   }
 }

@@ -136,11 +136,13 @@ export class BattleScene extends Phaser.Scene {
       this.player.stop();
       return;
     }
-    const left = this.cursors.left.isDown || this.keyA.isDown || this.touch.left;
-    const right = this.cursors.right.isDown || this.keyD.isDown || this.touch.right;
+    const kbLeft = this.cursors.left.isDown || this.keyA.isDown;
+    const kbRight = this.cursors.right.isDown || this.keyD.isDown;
+    const kbAxis = (kbLeft ? -1 : 0) + (kbRight ? 1 : 0);
+    // ジョイスティック優先、無入力ならキーボード
+    const axis = this.touch.axisX !== 0 ? this.touch.axisX : kbAxis;
     const spd = this.player.def.stats.spd;
-    if (left && !right) this.player.moveX(-spd);
-    else if (right && !left) this.player.moveX(spd);
+    if (axis !== 0) this.player.moveX(axis * spd);
     else this.player.stop();
 
     if (this.cursors.up.isDown) this.player.jump();
