@@ -4,6 +4,8 @@ import { getMove } from '../data/moves';
 import { BattleEngine, createBattleMonster } from '../engine/BattleEngine';
 import { BattleAI } from '../ai/BattleAI';
 import { Effects } from '../fx/Effects';
+import { NetManager } from '../net/NetManager';
+import type { NetworkMsg } from '../net/messages';
 import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster } from '../data/types';
 
 // Layout constants
@@ -48,16 +50,18 @@ interface MoveBtn {
 }
 
 export interface BattleSceneData {
-  mode: 'quest' | 'pvp';
+  mode: 'quest' | 'pvp' | 'network';
   p1Team: OwnedMonster[];
   p2Team: OwnedMonster[];
+  localPlayer?: 1 | 2;
 }
 
 export class BattleScene extends Phaser.Scene {
   private engine!: BattleEngine;
   private ai!: BattleAI;
   private fx!: Effects;
-  private mode: 'quest' | 'pvp' = 'quest';
+  private mode: 'quest' | 'pvp' | 'network' = 'quest';
+  private localPlayer: 1 | 2 = 1;
 
   private phase: 'selecting' | 'revealing' | 'animating' | 'forcedSwitch' | 'forcedAttack' | 'gameOver' = 'selecting';
 
@@ -89,6 +93,25 @@ export class BattleScene extends Phaser.Scene {
   private eventQueue: BattleEvent[] = [];
   private processingEvent = false;
   private tooltipBox?: Phaser.GameObjects.Container;
+  private netPrecomputedEvents?: BattleEvent[];
+
+  // ── Network helpers ───────────────────────────────────────────────────
+  private get myActive(): BattleMonster {
+    return this.localPlayer === 1 ? this.engine.p1Active : this.engine.p2Active;
+  }
+  private get myActiveIdx(): number {
+    return this.localPlayer === 1 ? this.engine.p1ActiveIdx : this.engine.p2ActiveIdx;
+  }
+  private get myTeam(): BattleMonster[] {
+    return this.localPlayer === 1 ? this.engine.p1Team : this.engine.p2Team;
+  }
+  private get myAction(): BattleAction | undefined {
+    return this.localPlayer === 1 ? this.p1Action : this.p2Action;
+  }
+  private setMyAction(action: BattleAction): void {
+    if (this.localPlayer === 1) this.p1Action = action;
+    else this.p2Action = action;
+  }
 
   constructor() {
     super('Battle');
@@ -96,6 +119,7 @@ export class BattleScene extends Phaser.Scene {
 
   init(data: BattleSceneData): void {
     this.mode = data.mode;
+    this.localPlayer = data.localPlayer ?? 1;
     this.engine = new BattleEngine(
       data.p1Team.map(createBattleMonster),
       data.p2Team.map(createBattleMonster),
@@ -108,6 +132,11 @@ export class BattleScene extends Phaser.Scene {
     this.processingEvent = false;
     this.p1Action = undefined;
     this.p2Action = undefined;
+
+    if (this.mode === 'network') {
+      NetManager.onMessage = (msg: NetworkMsg) => this.handleNetMsg(msg);
+      NetManager.onDisconnect = () => this.handleDisconnect();
+    }
   }
 
   create(): void {
@@ -117,7 +146,7 @@ export class BattleScene extends Phaser.Scene {
     this.buildSprites();
     this.buildStatusBar();
     this.buildLog();
-    this.buildMoveBtns(this.engine.p1Active);
+    this.buildMoveBtns(this.myActive);
     this.buildSwBtn();
     this.buildTeamDots();
     this.showBanner('バトル開始!', '#9be7ff', () => this.startTurn());
@@ -357,7 +386,9 @@ export class BattleScene extends Phaser.Scene {
     this.p1StatusText.setText('');
     this.setLog(`ターン ${this.engine.turn} — 技を選べ!`);
 
-    if (this.mode === 'quest') this.p2Action = this.ai.decide(this.engine, 2);
+    if (this.mode === 'quest') {
+      this.p2Action = this.ai.decide(this.engine, 2);
+    }
 
     this.timerEvent?.remove();
     this.timerText.setText('20').setStyle({ color: '#ffe066' });
@@ -378,27 +409,35 @@ export class BattleScene extends Phaser.Scene {
     }
     if (this.timerVal <= 0 && this.phase === 'selecting') {
       this.timerEvent?.remove();
-      if (!this.p1Action) this.p1Action = { type: 'none' };
-      if (!this.p2Action) this.p2Action = { type: 'none' };
-      this.startReveal();
+      if (this.mode === 'network') {
+        if (!this.myAction) { this.setMyAction({ type: 'none' }); this.markReady(); this.checkReady(); }
+      } else {
+        if (!this.p1Action) this.p1Action = { type: 'none' };
+        if (!this.p2Action) this.p2Action = { type: 'none' };
+        this.startReveal();
+      }
     }
   }
 
   private onMove(idx: number): void {
-    if (this.phase !== 'selecting' || this.p1Action) return;
-    const moveId = this.engine.p1Active.monsterDef.moveIds[idx];
-    if (!moveId || !this.engine.isMoveReady(this.engine.p1Active, moveId)) return;
-    this.p1Action = { type: 'move', moveId };
+    if (this.phase !== 'selecting' || this.myAction) return;
+    const moveId = this.myActive.monsterDef.moveIds[idx];
+    if (!moveId || !this.engine.isMoveReady(this.myActive, moveId)) return;
+    this.setMyAction({ type: 'move', moveId });
     this.markReady();
     this.checkReady();
   }
 
   private onSwitch(): void {
-    if (this.phase !== 'selecting' || this.p1Action) return;
-    const targets = this.engine.availableSwitchTargets(this.engine.p1Team, this.engine.p1ActiveIdx);
+    if (this.phase !== 'selecting' || this.myAction) return;
+    const targets = this.engine.availableSwitchTargets(this.myTeam, this.myActiveIdx);
     if (!targets.length) return;
-    this.switchPopup(this.engine.p1Team, targets, false,
-      (idx) => { this.p1Action = { type: 'switch', targetIndex: idx }; this.markReady(); this.checkReady(); },
+    this.switchPopup(this.myTeam, targets, false,
+      (idx) => {
+        this.setMyAction({ type: 'switch', targetIndex: idx });
+        this.markReady();
+        this.checkReady();
+      },
       () => {/* cancelled */},
     );
   }
@@ -409,6 +448,18 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private checkReady(): void {
+    if (this.mode === 'network') {
+      if (this.localPlayer === 2) {
+        // Guest: send action to host and wait for turnResult
+        NetManager.send({ type: 'action', action: this.p2Action! });
+      } else {
+        // Host: check if both actions available
+        if (!this.p1Action || !this.p2Action) return;
+        this.timerEvent?.remove();
+        this.time.delayedCall(300, () => this.startReveal());
+      }
+      return;
+    }
     if (!this.p1Action || !this.p2Action) return;
     this.timerEvent?.remove();
     this.time.delayedCall(300, () => this.startReveal());
@@ -477,7 +528,19 @@ export class BattleScene extends Phaser.Scene {
 
   private execTurn(p1A: BattleAction, p2A: BattleAction): void {
     this.phase = 'animating';
-    this.eventQueue = this.engine.resolveTurn(p1A, p2A).filter(e => e.type !== 'revealActions');
+    if (this.netPrecomputedEvents) {
+      this.eventQueue = this.netPrecomputedEvents;
+      this.netPrecomputedEvents = undefined;
+    } else {
+      const rawEvents = this.engine.resolveTurn(p1A, p2A);
+      if (this.mode === 'network' && this.localPlayer === 1) {
+        NetManager.send({
+          type: 'turnResult', p1Action: p1A, p2Action: p2A,
+          events: rawEvents, state: this.engine.captureNetState(),
+        });
+      }
+      this.eventQueue = rawEvents.filter(e => e.type !== 'revealActions');
+    }
     this.processingEvent = false;
     this.nextEvent();
   }
@@ -649,6 +712,20 @@ export class BattleScene extends Phaser.Scene {
     const p1Fainted = this.engine.p1Active.fainted && this.engine.p1Team.some(m => !m.fainted);
     const p2Fainted = this.engine.p2Active.fainted && this.engine.p2Team.some(m => !m.fainted);
 
+    if (this.mode === 'network') {
+      if (p1Fainted || p2Fainted) {
+        this.phase = 'forcedSwitch';
+        const faintedPlayer: 1|2 = p1Fainted ? 1 : 2;
+        if (faintedPlayer === this.localPlayer) {
+          this.doForcedSwitch(faintedPlayer);
+        }
+        // else: wait for opponent's forcedSwitch net message
+      } else {
+        this.nextTurn();
+      }
+      return;
+    }
+
     if (p1Fainted) {
       this.doForcedSwitch(1);
     } else if (p2Fainted) {
@@ -675,9 +752,16 @@ export class BattleScene extends Phaser.Scene {
     this.setLog('つぎのモンスターを選べ!');
     this.switchPopup(team, targets, true,
       (idx) => {
+        if (this.mode === 'network') {
+          NetManager.send({ type: 'forcedSwitch', player, idx });
+        }
         this.engine.doForcedSwitch(player, idx);
         this.resetSprites(); this.syncAllHpBars();
-        this.doForcedAttack(player);
+        if (this.mode === 'network') {
+          this.time.delayedCall(300, () => { this.buildMoveBtns(this.myActive); this.nextTurn(); });
+        } else {
+          this.doForcedAttack(player);
+        }
       },
       () => {/* forced — no cancel */},
     );
@@ -741,7 +825,7 @@ export class BattleScene extends Phaser.Scene {
   private nextTurn(): void {
     if (!this.engine.p1Team.some(m => !m.fainted)) { this.showGameOver(2); return; }
     if (!this.engine.p2Team.some(m => !m.fainted)) { this.showGameOver(1); return; }
-    this.buildMoveBtns(this.engine.p1Active);
+    this.buildMoveBtns(this.myActive);
     this.startTurn();
   }
 
@@ -753,10 +837,11 @@ export class BattleScene extends Phaser.Scene {
     this.fx.shake(0.018, 380);
 
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.6).setDepth(2000);
+    const isWin = this.mode === 'network' ? winner === this.localPlayer : winner === 1;
     const banner = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 28,
-      winner === 1 ? 'YOU WIN!' : 'YOU LOSE…', {
+      isWin ? 'YOU WIN!' : 'YOU LOSE…', {
       fontFamily: 'system-ui, sans-serif', fontSize: '72px',
-      color: winner === 1 ? '#9be7ff' : '#ff4d6d',
+      color: isWin ? '#9be7ff' : '#ff4d6d',
       fontStyle: 'bold', stroke: '#000000', strokeThickness: 10,
     }).setOrigin(0.5).setDepth(2001).setScale(0);
     this.tweens.add({ targets: banner, scale: 1, duration: 380, ease: 'Back.easeOut' });
@@ -831,7 +916,7 @@ export class BattleScene extends Phaser.Scene {
   // ── Button refresh ────────────────────────────────────────────────────
 
   private refreshMoveBtns(): void {
-    const mon = this.engine.p1Active;
+    const mon = this.myActive;
     this.moveBtns.forEach((btn, i) => {
       const moveId = mon.monsterDef.moveIds[i];
       if (!moveId) { btn.container.setVisible(false); return; }
@@ -847,7 +932,7 @@ export class BattleScene extends Phaser.Scene {
         btn.cdLabel.setText('');
       }
     });
-    const canSw = this.engine.availableSwitchTargets(this.engine.p1Team, this.engine.p1ActiveIdx).length > 0;
+    const canSw = this.engine.availableSwitchTargets(this.myTeam, this.myActiveIdx).length > 0;
     this.swEnabled = canSw; this.swDim.setVisible(!canSw);
   }
 
@@ -912,5 +997,54 @@ export class BattleScene extends Phaser.Scene {
 
   private trunc(s: string, n: number): string {
     return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+
+  // ── Network message handling ──────────────────────────────────────────
+
+  private handleNetMsg(msg: NetworkMsg): void {
+    switch (msg.type) {
+      case 'action':
+        // Host receives guest's action
+        if (this.localPlayer === 1 && this.phase === 'selecting') {
+          this.p2Action = msg.action;
+          this.checkReady();
+        }
+        break;
+
+      case 'turnResult':
+        // Guest receives resolved turn from host
+        if (this.localPlayer !== 2 || this.phase !== 'selecting') break;
+        this.timerEvent?.remove();
+        this.p1Action = msg.p1Action;
+        this.p2Action = msg.p2Action;
+        this.engine.applyNetState(msg.state);
+        this.netPrecomputedEvents = msg.events.filter(e => e.type !== 'revealActions');
+        this.time.delayedCall(100, () => this.startReveal());
+        break;
+
+      case 'forcedSwitch':
+        // Other player made their forced switch
+        if (this.phase !== 'forcedSwitch') break;
+        this.engine.doForcedSwitch(msg.player, msg.idx);
+        this.resetSprites();
+        this.syncAllHpBars();
+        this.time.delayedCall(300, () => { this.buildMoveBtns(this.myActive); this.nextTurn(); });
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  private handleDisconnect(): void {
+    if (this.phase === 'gameOver') return;
+    this.phase = 'gameOver';
+    this.timerEvent?.remove();
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setDepth(2000);
+    this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 20, '接続が切れました', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '40px', color: '#ff8888',
+      fontStyle: 'bold', stroke: '#000000', strokeThickness: 8,
+    }).setOrigin(0.5).setDepth(2001);
+    this.time.delayedCall(2000, () => this.input.once('pointerdown', () => this.scene.start('Title')));
   }
 }

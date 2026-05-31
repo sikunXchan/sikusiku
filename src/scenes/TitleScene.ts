@@ -52,17 +52,18 @@ export class TitleScene extends Phaser.Scene {
     const buttons = [
       { label: '⚔ バトル', sub: '2人で対戦', color: 0xff6b6b, action: () => this.startBattle() },
       { label: '🌿 クエスト', sub: 'モンスターを倒して仲間に', color: 0x66ccff, action: () => this.startQuest() },
+      { label: '📡 ちかくで対戦', sub: '別デバイスで無線対戦', color: 0xcc88ff, action: () => this.openLobby() },
       { label: '📦 マイモンスター', sub: '所持モンスター一覧', color: 0xffd700, action: () => this.openMonsterList() },
     ];
 
-    const totalW = buttons.length * 260 + (buttons.length - 1) * 20;
+    const totalW = buttons.length * 230 + (buttons.length - 1) * 14;
     let startX = (GAME_WIDTH - totalW) / 2;
 
     for (const btn of buttons) {
       const x = startX + 130;
       const y = 440;
 
-      const bg = this.add.rectangle(x, y, 260, 80, btn.color, 0.15);
+      const bg = this.add.rectangle(x, y, 230, 80, btn.color, 0.15);
       bg.setStrokeStyle(2, btn.color, 0.8);
       bg.setInteractive({ useHandCursor: true });
 
@@ -90,8 +91,12 @@ export class TitleScene extends Phaser.Scene {
       });
       bg.on('pointerdown', btn.action);
 
-      startX += 280;
+      startX += 244;
     }
+  }
+
+  private openLobby(): void {
+    this.scene.start('Lobby');
   }
 
   private startBattle(): void {
