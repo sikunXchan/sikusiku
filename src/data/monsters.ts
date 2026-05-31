@@ -46,6 +46,24 @@ export const MONSTERS: Record<string, MonsterDef> = {
     moveIds: ['counter', 'shikkokunoTsurugi', 'kawasu2'],
     catchRate: 15,
   },
+  roncha: {
+    id: 'roncha',
+    name: 'ロンチャ',
+    frontSprite: 'roncha_front',
+    backSprite: 'roncha_back',
+    baseStats: { hp: 200, atk: 80, def: 130 },
+    moveIds: ['shinpiNoroi', 'migawari', 'hakkyou'],
+    catchRate: 25,
+  },
+  darkshikun: {
+    id: 'darkshikun',
+    name: '闇堕ちしくん',
+    frontSprite: 'darkshikun_front',
+    backSprite: 'darkshikun_back',
+    baseStats: { hp: 190, atk: 115, def: 95 },
+    moveIds: ['kyoufu', 'haki', 'yamiNoShikken'],
+    catchRate: 20,
+  },
 };
 
 export const MONSTER_IDS = Object.keys(MONSTERS) as (keyof typeof MONSTERS)[];

@@ -51,7 +51,10 @@ export type MoveEffectType =
   | 'ohko'
   | 'applyHeal'
   | 'applyBarrier'
-  | 'applyExplosion';
+  | 'applyExplosion'
+  | 'applyShield'
+  | 'applyHealPercent'
+  | 'sacrificeRevive';
 
 export interface MoveEffect {
   type: MoveEffectType;
@@ -67,7 +70,7 @@ export interface MoveDef {
   effects: MoveEffect[];
   color: number;
   description: string;
-  category?: 'physical' | 'special' | 'status' | 'curse' | 'barrier' | 'heal' | 'explosion' | 'counter';
+  category?: 'physical' | 'special' | 'status' | 'curse' | 'barrier' | 'heal' | 'explosion' | 'counter' | 'sacrifice' | 'shield';
 }
 
 export type StatusEffectType =
@@ -82,7 +85,9 @@ export type StatusEffectType =
   | 'critBoost'
   | 'atkDebuffOnOpponent'
   | 'counterReady'
-  | 'counterFailed';
+  | 'counterFailed'
+  | 'shield'
+  | 'healPercent';
 
 export interface StatusEffect {
   type: StatusEffectType;
@@ -123,5 +128,8 @@ export type BattleEvent =
   | { type: 'ohko'; player: 1 | 2; succeeded: boolean }
   | { type: 'statusApply'; player: 1 | 2; target: 1 | 2; statusType: StatusEffectType }
   | { type: 'statusTick'; player: 1 | 2; statusType: StatusEffectType; damage: number }
+  | { type: 'heal'; player: 1 | 2; amount: number }
+  | { type: 'shieldBreak'; player: 1 | 2; reflectDamage: number }
+  | { type: 'sacrifice'; player: 1 | 2; revived: boolean; allyIdx: number }
   | { type: 'faint'; player: 1 | 2 }
   | { type: 'gameOver'; winner: 1 | 2 };
