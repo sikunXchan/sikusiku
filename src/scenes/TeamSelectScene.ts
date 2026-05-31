@@ -388,80 +388,135 @@ export class TeamSelectScene extends Phaser.Scene {
   }
 
   private buildRandomCpuTeam(): OwnedMonster[] {
-    const shuffled = [...MONSTER_IDS].sort(() => Math.random() - 0.5);
+    const pool = (MONSTER_IDS as string[]).filter(id => id !== 'lilyenma');
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, TEAM_SIZE).map(id => ({
-      uid: generateUid(), defId: id as string, ivs: randomIVs(),
+      uid: generateUid(), defId: id, ivs: randomIVs(),
     }));
   }
 
   private showTargetSelection(playerTeam: OwnedMonster[]): void {
     const D = 700;
-    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
+    // lilyenma is shop-only — exclude from quest targets and CPU pool
+    const QUEST_IDS = (MONSTER_IDS as string[]).filter(id => id !== 'lilyenma');
+
+    const PW = 860;
+    const PH = 420;
+    const PX = GAME_WIDTH / 2;
+    const PY = GAME_HEIGHT / 2;
+    const PLeft = PX - PW / 2;
+    const PTop  = PY - PH / 2;
+
+    // ── Static frame ──────────────────────────────────────────────────
+    const overlay = this.add.rectangle(PX, PY, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
       .setDepth(D).setInteractive();
-    const panelW = 860;
-    const panelH = 280;
-    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(D + 1);
-    panel.add(this.add.rectangle(0, 0, panelW, panelH, 0x0f0c1e).setStrokeStyle(2, 0xffe066));
-    panel.add(this.add.text(0, -panelH / 2 + 22, '狙うモンスターを選んでください', {
+    const frame = this.add.container(PX, PY).setDepth(D + 1);
+    frame.add(this.add.rectangle(0, 0, PW, PH, 0x0f0c1e).setStrokeStyle(2, 0xffe066));
+    frame.add(this.add.text(0, -PH / 2 + 22, '狙うモンスターを選んでください', {
       fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#ffe066', fontStyle: 'bold',
     }).setOrigin(0.5));
-    panel.add(this.add.text(0, -panelH / 2 + 46, '(選ばない場合はランダム)', {
+    frame.add(this.add.text(0, -PH / 2 + 48, '(選ばない場合はランダム)', {
       fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#888888',
     }).setOrigin(0.5));
 
-    const cols = Math.min(MONSTER_IDS.length, 7);
-    const cardW = 112;
-    const startOff = -((cols - 1) * cardW) / 2;
+    const skipBg = this.add.rectangle(PX, PTop + PH - 28, 160, 36, 0x222233)
+      .setStrokeStyle(1, 0x555566).setDepth(D + 2).setInteractive({ useHandCursor: true });
+    const skipLabel = this.add.text(PX, PTop + PH - 28, 'ランダムでいい', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#888888',
+    }).setOrigin(0.5).setDepth(D + 2);
+    skipBg.on('pointerover', () => { skipBg.setFillStyle(0x333355); skipLabel.setStyle({ color: '#aaaaaa' }); });
+    skipBg.on('pointerout',  () => { skipBg.setFillStyle(0x222233); skipLabel.setStyle({ color: '#888888' }); });
+
+    // ── Card grid (scrollable) ────────────────────────────────────────
+    const COLS   = 4;
+    const CW = 190, CH = 130, CGAP = 8;
+    const ROW_H  = CH + CGAP;
+    const GRID_W = COLS * CW + (COLS - 1) * CGAP;   // 784
+    const GRID_LEFT = PX - GRID_W / 2;
+
+    const NUM_ROWS   = Math.ceil(QUEST_IDS.length / COLS);
+    const CONTENT_H  = NUM_ROWS * ROW_H;
+    const CLIP_TOP   = PTop + 68;
+    const CLIP_H     = PH - 68 - 56;
+    const MAX_SCROLL = Math.max(0, CONTENT_H - CLIP_H);
+
+    let scrollY = 0;
+    const cardCont = this.add.container(0, CLIP_TOP).setDepth(D + 2);
+    const maskG = this.add.graphics();
+    maskG.fillStyle(0xffffff).fillRect(PLeft + 4, CLIP_TOP, PW - 8, CLIP_H);
+    cardCont.setMask(maskG.createGeometryMask());
+    maskG.setVisible(false);
+
+    let dragging = false, dragStartY = 0, dragStartScrollY = 0, _pressY = 0;
+
+    const applyScroll = (y: number) => {
+      scrollY = Phaser.Math.Clamp(y, 0, MAX_SCROLL);
+      cardCont.y = CLIP_TOP - scrollY;
+    };
+    const onWheel       = (_p: unknown, _g: unknown, _dx: number, dy: number) => applyScroll(scrollY + dy * 0.6);
+    const onPointerDown = (p: Phaser.Input.Pointer) => { dragging = true; dragStartY = p.y; dragStartScrollY = scrollY; };
+    const onPointerMove = (p: Phaser.Input.Pointer) => { if (!dragging || !p.isDown) return; applyScroll(dragStartScrollY + (dragStartY - p.y)); };
+    const onPointerUp   = () => { dragging = false; };
+
+    const cleanup = () => {
+      this.input.off('wheel', onWheel);
+      this.input.off('pointerdown', onPointerDown);
+      this.input.off('pointermove', onPointerMove);
+      this.input.off('pointerup', onPointerUp);
+      overlay.destroy(); frame.destroy();
+      cardCont.destroy(); maskG.destroy();
+      skipBg.destroy(); skipLabel.destroy();
+    };
 
     const launch = (targetDefId: string | null) => {
-      overlay.destroy(); panel.destroy();
+      cleanup();
       const cpuTeam: OwnedMonster[] = [];
       if (targetDefId) {
         cpuTeam.push({ uid: generateUid(), defId: targetDefId, ivs: randomIVs() });
       }
       while (cpuTeam.length < TEAM_SIZE) {
-        const id = MONSTER_IDS[Math.floor(Math.random() * MONSTER_IDS.length)];
+        const id = QUEST_IDS[Math.floor(Math.random() * QUEST_IDS.length)];
         cpuTeam.push({ uid: generateUid(), defId: id, ivs: randomIVs() });
       }
       this.scene.start('Battle', { mode: 'quest', p1Team: playerTeam, p2Team: cpuTeam });
     };
 
-    MONSTER_IDS.forEach((defId, ti) => {
+    // ── Build monster cards ───────────────────────────────────────────
+    QUEST_IDS.forEach((defId, ti) => {
       const def = getMonsterDef(defId);
-      const bx = startOff + ti * cardW;
-      const by = 20;
+      const col = ti % COLS;
+      const row = Math.floor(ti / COLS);
+      const cx  = GRID_LEFT + col * (CW + CGAP) + CW / 2;
+      const cy  = 4 + row * ROW_H + CH / 2;
 
-      const bg = this.add.rectangle(bx, by, cardW - 8, 160, 0x1a1842).setStrokeStyle(2, 0x5a4cd0);
+      const bg = this.add.rectangle(cx, cy, CW, CH, 0x1a1842).setStrokeStyle(2, 0x5a4cd0);
       bg.setInteractive({ useHandCursor: true });
-
-      const nameT = this.add.text(bx, by + 60, def.name, {
+      const nameT = this.add.text(cx, cy + 42, def.name, {
         fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#cccccc', fontStyle: 'bold',
-        wordWrap: { width: cardW - 12 }, align: 'center',
+        wordWrap: { width: CW - 12 }, align: 'center',
       }).setOrigin(0.5);
-
-      panel.add([bg, nameT]);
+      cardCont.add([bg, nameT]);
 
       if (this.textures.exists(def.frontSprite)) {
-        const img = this.add.image(bx, by - 20, def.frontSprite);
+        const img = this.add.image(cx, cy - 18, def.frontSprite);
         img.setScale(Math.min(70 / img.width, 60 / img.height));
-        panel.add(img);
+        cardCont.add(img);
       }
 
-      bg.on('pointerover', () => { bg.setFillStyle(0x2a2860); bg.setStrokeStyle(2, 0xffe066); });
-      bg.on('pointerout', () => { bg.setFillStyle(0x1a1842); bg.setStrokeStyle(2, 0x5a4cd0); });
-      bg.on('pointerdown', () => launch(defId));
+      bg.on('pointerover', () => { if (!dragging) { bg.setFillStyle(0x2a2860); bg.setStrokeStyle(2, 0xffe066); } });
+      bg.on('pointerout',  () => { bg.setFillStyle(0x1a1842); bg.setStrokeStyle(2, 0x5a4cd0); });
+      bg.on('pointerdown', () => { _pressY = this.input.activePointer.y; });
+      bg.on('pointerup',   () => { if (!dragging && Math.abs(this.input.activePointer.y - _pressY) < 8) launch(defId); });
     });
 
-    // Skip button
-    const skipBg = this.add.rectangle(0, panelH / 2 - 28, 160, 36, 0x222233).setStrokeStyle(1, 0x555566);
-    const skipLabel = this.add.text(0, panelH / 2 - 28, 'ランダムでいい', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#888888',
-    }).setOrigin(0.5);
-    skipBg.setInteractive({ useHandCursor: true });
-    skipBg.on('pointerover', () => { skipBg.setFillStyle(0x333355); skipLabel.setStyle({ color: '#aaaaaa' }); });
-    skipBg.on('pointerout', () => { skipBg.setFillStyle(0x222233); skipLabel.setStyle({ color: '#888888' }); });
     skipBg.on('pointerdown', () => launch(null));
-    panel.add([skipBg, skipLabel]);
+
+    // ── Scroll & close listeners ───────────────────────────────────────
+    this.input.on('wheel', onWheel);
+    this.input.on('pointerdown', onPointerDown);
+    this.input.on('pointermove', onPointerMove);
+    this.input.on('pointerup', onPointerUp);
+    overlay.on('pointerdown', () => cleanup());
   }
 
   private confirmNetworkTeam(myTeam: OwnedMonster[]): void {

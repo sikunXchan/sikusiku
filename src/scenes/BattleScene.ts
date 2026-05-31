@@ -1330,9 +1330,10 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private makeSurvivalCpuTeam(): OwnedMonster[] {
-    const shuffled = [...MONSTER_IDS].sort(() => Math.random() - 0.5);
+    const pool = (MONSTER_IDS as string[]).filter(id => id !== 'lilyenma');
+    const shuffled = [...pool].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, 3).map(id => ({
-      uid: generateUid(), defId: id as string, ivs: randomIVs(),
+      uid: generateUid(), defId: id, ivs: randomIVs(),
     }));
   }
 

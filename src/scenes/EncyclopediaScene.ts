@@ -126,6 +126,7 @@ export class EncyclopediaScene extends Phaser.Scene {
     g.fillStyle(0xffffff);
     g.fillRect(0, HEADER_H, GAME_WIDTH, this.viewportH);
     this.cardContainer.setMask(g.createGeometryMask());
+    g.setVisible(false);
   }
 
   private buildHeader(save: GameSave): void {
