@@ -24,7 +24,11 @@ const MOVE_BTN_W = 207;
 const MOVE_BTN_CENTERS_X = [113, 330, 547];
 const SW_BTN_X = 812;
 const SW_BTN_W = 138;
-const SPRITE_SCALE = 3.0;
+// Max display sizes for battle sprites (fit-to-box, aspect preserved)
+const ENEMY_MAX_W = 240;
+const ENEMY_MAX_H = 210;
+const PLAYER_MAX_W = 210;
+const PLAYER_MAX_H = 175;
 
 interface HpBarUI {
   fill: Phaser.GameObjects.Rectangle;
@@ -149,15 +153,16 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private makeHpBar(x: number, y: number, mon: BattleMonster, color: number): HpBarUI {
+    const D = 60; // depth above sprites
     const nameText = this.add.text(x, y - 22, mon.monsterDef.name, {
       fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#cccccc', fontStyle: 'bold',
-    });
-    this.add.rectangle(x + HP_BAR_W / 2, y + HP_BAR_H / 2, HP_BAR_W, HP_BAR_H, 0x111111);
-    this.add.rectangle(x + HP_BAR_W / 2, y + HP_BAR_H / 2, HP_BAR_W, HP_BAR_H, 0).setStrokeStyle(1, 0x444444);
-    const fill = this.add.rectangle(x, y, HP_BAR_W, HP_BAR_H, color).setOrigin(0, 0);
+    }).setDepth(D);
+    this.add.rectangle(x + HP_BAR_W / 2, y + HP_BAR_H / 2, HP_BAR_W, HP_BAR_H, 0x111111).setDepth(D);
+    this.add.rectangle(x + HP_BAR_W / 2, y + HP_BAR_H / 2, HP_BAR_W, HP_BAR_H, 0).setStrokeStyle(1, 0x444444).setDepth(D);
+    const fill = this.add.rectangle(x, y, HP_BAR_W, HP_BAR_H, color).setOrigin(0, 0).setDepth(D);
     const text = this.add.text(x + HP_BAR_W + 6, y + HP_BAR_H / 2, `${mon.currentHp}/${mon.maxHp}`, {
       fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#aaaaaa',
-    }).setOrigin(0, 0.5);
+    }).setOrigin(0, 0.5).setDepth(D);
     return { fill, text, nameText, maxW: HP_BAR_W, defaultColor: color };
   }
 
@@ -176,18 +181,26 @@ export class BattleScene extends Phaser.Scene {
 
   // ── Sprites ───────────────────────────────────────────────────────────
 
+  private fitSprite(img: Phaser.GameObjects.Image, maxW: number, maxH: number): void {
+    img.setScale(1); // reset to get native texture dimensions
+    const scale = Math.min(maxW / img.width, maxH / img.height);
+    img.setScale(scale);
+  }
+
   private buildSprites(): void {
-    this.enemySprite = this.add.image(ENEMY_X, ENEMY_Y, this.engine.p2Active.monsterDef.frontSprite).setScale(SPRITE_SCALE);
-    this.playerSprite = this.add.image(PLAYER_X, PLAYER_Y, this.engine.p1Active.monsterDef.backSprite).setScale(SPRITE_SCALE);
+    this.enemySprite = this.add.image(ENEMY_X, ENEMY_Y, this.engine.p2Active.monsterDef.frontSprite);
+    this.fitSprite(this.enemySprite, ENEMY_MAX_W, ENEMY_MAX_H);
+    this.playerSprite = this.add.image(PLAYER_X, PLAYER_Y, this.engine.p1Active.monsterDef.backSprite);
+    this.fitSprite(this.playerSprite, PLAYER_MAX_W, PLAYER_MAX_H);
   }
 
   private resetSprites(): void {
-    this.enemySprite
-      .setTexture(this.engine.p2Active.monsterDef.frontSprite)
+    this.enemySprite.setTexture(this.engine.p2Active.monsterDef.frontSprite)
       .setAlpha(1).setPosition(ENEMY_X, ENEMY_Y).setAngle(0);
-    this.playerSprite
-      .setTexture(this.engine.p1Active.monsterDef.backSprite)
+    this.fitSprite(this.enemySprite, ENEMY_MAX_W, ENEMY_MAX_H);
+    this.playerSprite.setTexture(this.engine.p1Active.monsterDef.backSprite)
       .setAlpha(1).setPosition(PLAYER_X, PLAYER_Y).setAngle(0);
+    this.fitSprite(this.playerSprite, PLAYER_MAX_W, PLAYER_MAX_H);
   }
 
   // ── Status bar & log ──────────────────────────────────────────────────
@@ -503,7 +516,9 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.add({
       targets: sp, x: origX + dir * 200, alpha: 0, duration: 240,
       onComplete: () => {
-        sp.setTexture(key).setAlpha(0).setX(origX - dir * 200);
+        sp.setTexture(key);
+        this.fitSprite(sp, player === 1 ? PLAYER_MAX_W : ENEMY_MAX_W, player === 1 ? PLAYER_MAX_H : ENEMY_MAX_H);
+        sp.setAlpha(0).setX(origX - dir * 200);
         this.tweens.add({
           targets: sp, x: origX, alpha: 1, duration: 260, ease: 'Cubic.easeOut',
           onComplete: () => { this.syncAllHpBars(); this.time.delayedCall(350, done); },
@@ -577,7 +592,7 @@ export class BattleScene extends Phaser.Scene {
     this.setLog(`${mon.monsterDef.name}: ${desc}`);
     const glow = this.add.circle(sp.x, sp.y, 56, 0xffd700, 0.25).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: glow, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 700, onComplete: () => glow.destroy() });
-    this.tweens.add({ targets: sp, scaleX: SPRITE_SCALE * 1.12, scaleY: SPRITE_SCALE * 1.12, duration: 200, yoyo: true });
+    this.tweens.add({ targets: sp, scaleX: sp.scaleX * 1.12, scaleY: sp.scaleY * 1.12, duration: 200, yoyo: true });
     this.pop(sp.x, sp.y - 90, desc, '#ffd700', 17);
     this.time.delayedCall(820, done);
   }

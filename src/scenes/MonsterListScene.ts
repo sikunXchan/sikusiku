@@ -79,6 +79,8 @@ export class MonsterListScene extends Phaser.Scene {
         { label: 'DEF', val: computedDef, iv: owned.ivs.def, color: '#66ccff' },
       ];
 
+      const ivElems: (Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text)[] = [];
+
       for (let s = 0; s < stats.length; s++) {
         const stat = stats[s];
         const sy = y - 25 + s * 28;
@@ -96,18 +98,20 @@ export class MonsterListScene extends Phaser.Scene {
           fontStyle: 'bold',
         }).setOrigin(0, 0.5);
 
-        // IV bar
+        // IV bar — hidden by default, shown on long-press
         const barX = x + 100;
         const barW = 90;
-        this.add.rectangle(barX + barW / 2, sy, barW, 8, 0x333333);
-        this.add.rectangle(barX, sy, (barW * stat.iv) / 100, 8, Phaser.Display.Color.HexStringToColor(stat.color.replace('#', '')).color)
-          .setOrigin(0, 0.5);
-
-        this.add.text(barX + barW + 6, sy, `${stat.iv}`, {
+        const barColor = Phaser.Display.Color.HexStringToColor(stat.color.replace('#', '')).color;
+        const barBg = this.add.rectangle(barX + barW / 2, sy, barW, 8, 0x222222).setVisible(false);
+        const barFill = this.add.rectangle(barX, sy, Math.max(2, (barW * stat.iv) / 100), 8, barColor)
+          .setOrigin(0, 0.5).setVisible(false);
+        const ivLabel = this.add.text(barX + barW + 6, sy, `${stat.iv}`, {
           fontFamily: 'system-ui, sans-serif',
           fontSize: '11px',
-          color: '#666666',
-        }).setOrigin(0, 0.5);
+          color: '#888888',
+        }).setOrigin(0, 0.5).setVisible(false);
+
+        ivElems.push(barBg, barFill, ivLabel);
       }
 
       // No. label
@@ -116,6 +120,19 @@ export class MonsterListScene extends Phaser.Scene {
         fontSize: '11px',
         color: '#555555',
       }).setOrigin(0, 0.5);
+
+      // Invisible interactive area over the whole card for long-press
+      const hitArea = this.add.rectangle(x, y, colW - 10, rowH - 10, 0xffffff, 0.001)
+        .setInteractive({ useHandCursor: true });
+      let holdTimer: Phaser.Time.TimerEvent | undefined;
+      let ivShowing = false;
+
+      const showIv = (v: boolean) => { ivShowing = v; ivElems.forEach(el => el.setVisible(v)); };
+      hitArea.on('pointerdown', () => {
+        holdTimer = this.time.delayedCall(400, () => showIv(true));
+      });
+      hitArea.on('pointerup', () => { holdTimer?.remove(); holdTimer = undefined; if (ivShowing) showIv(false); });
+      hitArea.on('pointerout', () => { holdTimer?.remove(); holdTimer = undefined; if (ivShowing) showIv(false); });
     }
 
     if (monsters.length === 0) {
