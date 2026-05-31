@@ -37,4 +37,9 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, TitleScene, LobbyScene, MonsterListScene, TeamSelectScene, BattleScene],
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+// Force resize when browser chrome shows/hides (iOS dynamic viewport)
+window.addEventListener('resize', () => { game.scale.refresh(); });
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => game.scale.refresh(), 300);
+});
