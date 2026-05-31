@@ -5,6 +5,7 @@ export const MOVES: Record<string, MoveDef> = {
   kawasu: {
     id: 'kawasu',
     name: 'かわす',
+    moveType: 'normal',
     cooldownTurns: 2,
     baseDamage: 0,
     guaranteed: false,
@@ -16,6 +17,7 @@ export const MOVES: Record<string, MoveDef> = {
   chakken: {
     id: 'chakken',
     name: 'ちゃっけん',
+    moveType: 'fight',
     cooldownTurns: 1,
     baseDamage: 50,
     guaranteed: false,
@@ -27,6 +29,7 @@ export const MOVES: Record<string, MoveDef> = {
   drumming: {
     id: 'drumming',
     name: 'ドラミング',
+    moveType: 'fight',
     cooldownTurns: 2,
     baseDamage: 0,
     guaranteed: false,
@@ -39,6 +42,7 @@ export const MOVES: Record<string, MoveDef> = {
   shikken: {
     id: 'shikken',
     name: 'しっけん',
+    moveType: 'normal',
     cooldownTurns: 2,
     baseDamage: 70,
     guaranteed: false,
@@ -50,6 +54,7 @@ export const MOVES: Record<string, MoveDef> = {
   backflip: {
     id: 'backflip',
     name: 'バックフリップ',
+    moveType: 'normal',
     cooldownTurns: 3,
     baseDamage: 0,
     guaranteed: false,
@@ -62,6 +67,7 @@ export const MOVES: Record<string, MoveDef> = {
   kamitsuku: {
     id: 'kamitsuku',
     name: 'かみつく',
+    moveType: 'nature',
     cooldownTurns: 1,
     baseDamage: 55,
     guaranteed: false,
@@ -73,6 +79,7 @@ export const MOVES: Record<string, MoveDef> = {
   furueru: {
     id: 'furueru',
     name: '震える',
+    moveType: 'mystic',
     cooldownTurns: 3,
     baseDamage: 0,
     guaranteed: false,
@@ -88,6 +95,7 @@ export const MOVES: Record<string, MoveDef> = {
   akumanoroi: {
     id: 'akumanoroi',
     name: '最悪な呪い',
+    moveType: 'dark',
     cooldownTurns: 3,
     baseDamage: 0,
     guaranteed: false,
@@ -99,6 +107,7 @@ export const MOVES: Record<string, MoveDef> = {
   kyuushoNoroi: {
     id: 'kyuushoNoroi',
     name: '急所の呪い',
+    moveType: 'mystic',
     cooldownTurns: 2,
     baseDamage: 0,
     guaranteed: false,
@@ -110,6 +119,7 @@ export const MOVES: Record<string, MoveDef> = {
   raimei: {
     id: 'raimei',
     name: '雷鳴',
+    moveType: 'mystic',
     cooldownTurns: 2,
     baseDamage: 40,
     guaranteed: true,
@@ -122,6 +132,7 @@ export const MOVES: Record<string, MoveDef> = {
   yamiNoTsurugi: {
     id: 'yamiNoTsurugi',
     name: '闇のつるぎ',
+    moveType: 'dark',
     cooldownTurns: 2,
     baseDamage: 0,
     guaranteed: false,
@@ -133,6 +144,7 @@ export const MOVES: Record<string, MoveDef> = {
   shikkokunoTsurugi: {
     id: 'shikkokunoTsurugi',
     name: '漆黒のつるぎ',
+    moveType: 'dark',
     cooldownTurns: 999,  // one-use per battle
     baseDamage: 0,
     guaranteed: false,
@@ -144,6 +156,7 @@ export const MOVES: Record<string, MoveDef> = {
   kawasu2: {
     id: 'kawasu2',
     name: 'かわす',
+    moveType: 'normal',
     cooldownTurns: 2,
     baseDamage: 0,
     guaranteed: false,
@@ -156,6 +169,7 @@ export const MOVES: Record<string, MoveDef> = {
   shinpiNoroi: {
     id: 'shinpiNoroi',
     name: '神秘の呪い',
+    moveType: 'mystic',
     cooldownTurns: 4,
     baseDamage: 0,
     guaranteed: false,
@@ -167,6 +181,7 @@ export const MOVES: Record<string, MoveDef> = {
   migawari: {
     id: 'migawari',
     name: 'みがわり',
+    moveType: 'normal',
     cooldownTurns: 3,
     baseDamage: 0,
     guaranteed: true,
@@ -178,6 +193,7 @@ export const MOVES: Record<string, MoveDef> = {
   hakkyou: {
     id: 'hakkyou',
     name: '発狂',
+    moveType: 'mystic',
     cooldownTurns: 2,
     baseDamage: 0,
     guaranteed: false,
@@ -190,6 +206,7 @@ export const MOVES: Record<string, MoveDef> = {
   kyoufu: {
     id: 'kyoufu',
     name: '強風',
+    moveType: 'fight',
     cooldownTurns: 3,
     baseDamage: 20,
     guaranteed: true,
@@ -201,6 +218,7 @@ export const MOVES: Record<string, MoveDef> = {
   haki: {
     id: 'haki',
     name: '覇気',
+    moveType: 'fight',
     cooldownTurns: 3,
     baseDamage: 0,
     guaranteed: false,
@@ -212,6 +230,7 @@ export const MOVES: Record<string, MoveDef> = {
   yamiNoShikken: {
     id: 'yamiNoShikken',
     name: '闇のしっけん',
+    moveType: 'dark',
     cooldownTurns: 1,
     baseDamage: 25,
     guaranteed: false,

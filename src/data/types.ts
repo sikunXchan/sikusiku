@@ -1,5 +1,37 @@
 // Core types for turn-based monster battle game
 
+export type MonsterType = 'normal' | 'fight' | 'nature' | 'dark' | 'mystic';
+
+export const TYPE_NAMES: Record<MonsterType, string> = {
+  normal: 'ノーマル',
+  fight:  '格闘',
+  nature: '自然',
+  dark:   '闇',
+  mystic: '神秘',
+};
+
+export const TYPE_COLORS: Record<MonsterType, number> = {
+  normal: 0xaaaaaa,
+  fight:  0xff8844,
+  nature: 0x66cc44,
+  dark:   0x9944cc,
+  mystic: 0x44cccc,
+};
+
+/** Returns the damage multiplier for an attack of atkType hitting a defType monster. */
+export function typeEffectiveness(atkType: MonsterType, defType: MonsterType): number {
+  if (atkType === 'normal') return 1;
+  const chart: Partial<Record<MonsterType, Partial<Record<MonsterType, number>>>> = {
+    fight:  { dark: 2.0, nature: 0.5, mystic: 0.5 },
+    nature: { fight: 2.0, dark: 0.5 },
+    dark:   { nature: 2.0, fight: 0.5 },
+    mystic: { fight: 2.0 },
+  };
+  return chart[atkType]?.[defType] ?? 1;
+}
+
+export const STAB_MULT = 1.25;
+
 export interface IVs {
   hp: number;   // 0-100
   atk: number;
@@ -20,6 +52,7 @@ export function applyIV(base: number, iv: number): number {
 export interface MonsterDef {
   id: string;
   name: string;
+  type: MonsterType;
   frontSprite: string;
   backSprite: string;
   baseStats: BaseStats;
@@ -65,6 +98,7 @@ export interface MoveEffect {
 export interface MoveDef {
   id: string;
   name: string;
+  moveType: MonsterType;
   cooldownTurns: number;
   baseDamage: number;
   guaranteed: boolean;
@@ -123,7 +157,7 @@ export type BattleEvent =
   | { type: 'revealActions'; p1: BattleAction; p2: BattleAction }
   | { type: 'switch'; player: 1 | 2; fromIdx: number; toIdx: number }
   | { type: 'dodge'; player: 1 | 2 }
-  | { type: 'attack'; player: 1 | 2; moveId: string; damage: number; critical: boolean; dodged: boolean }
+  | { type: 'attack'; player: 1 | 2; moveId: string; damage: number; critical: boolean; dodged: boolean; effectiveness: number }
   | { type: 'buff'; player: 1 | 2; moveId: string; description: string }
   | { type: 'atkDebuff'; player: 1 | 2; target: 1 | 2 }
   | { type: 'conditionalDamage'; player: 1 | 2; damage: number; dodged: boolean }
