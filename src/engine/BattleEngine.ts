@@ -156,6 +156,33 @@ export class BattleEngine {
     return events;
   }
 
+  captureNetState(): import('../net/messages').GameNetState {
+    const snap = (team: BattleMonster[]) => team.map(m => ({
+      currentHp: m.currentHp, fainted: m.fainted,
+      moveCooldowns: { ...m.moveCooldowns },
+      statusEffects: m.statusEffects.map(se => ({ ...se })),
+      atkStat: m.atkStat, defStat: m.defStat,
+    }));
+    return { turn: this.turn, p1ActiveIdx: this.p1ActiveIdx, p2ActiveIdx: this.p2ActiveIdx, p1Team: snap(this.p1Team), p2Team: snap(this.p2Team) };
+  }
+
+  applyNetState(state: import('../net/messages').GameNetState): void {
+    this.turn = state.turn;
+    this.p1ActiveIdx = state.p1ActiveIdx;
+    this.p2ActiveIdx = state.p2ActiveIdx;
+    const apply = (team: BattleMonster[], states: import('../net/messages').MonsterNetState[]) => {
+      for (let i = 0; i < team.length && i < states.length; i++) {
+        const s = states[i];
+        team[i].currentHp = s.currentHp; team[i].fainted = s.fainted;
+        team[i].moveCooldowns = { ...s.moveCooldowns };
+        team[i].statusEffects = (s.statusEffects as StatusEffect[]).map(se => ({ ...se }));
+        team[i].atkStat = s.atkStat; team[i].defStat = s.defStat;
+      }
+    };
+    apply(this.p1Team, state.p1Team);
+    apply(this.p2Team, state.p2Team);
+  }
+
   /** Perform a forced switch for a fainted monster */
   doForcedSwitch(player: 1 | 2, targetIdx: number): void {
     if (player === 1) {

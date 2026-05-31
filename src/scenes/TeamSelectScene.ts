@@ -5,12 +5,15 @@ import { applyIV } from '../data/types';
 import type { OwnedMonster } from '../data/types';
 import type { GameSave } from '../storage/SaveData';
 import { randomIVs, generateUid } from '../storage/SaveData';
+import { NetManager } from '../net/NetManager';
+import type { NetworkMsg } from '../net/messages';
 
 export interface TeamSelectData {
-  mode: 'quest' | 'pvp';
+  mode: 'quest' | 'pvp' | 'network';
   save: GameSave;
   playerNum: 1 | 2;
   p1Team: OwnedMonster[] | null;
+  localPlayer?: 1 | 2;
 }
 
 const TEAM_SIZE = 3;
@@ -46,7 +49,11 @@ export class TeamSelectScene extends Phaser.Scene {
 
   private buildHeader(): void {
     const playerLabel = this.sceneData.playerNum === 1 ? 'P1' : 'P2';
-    const modeLabel = this.sceneData.mode === 'quest' ? 'クエスト' : `バトル (${playerLabel})`;
+    const modeLabel = this.sceneData.mode === 'quest'
+      ? 'クエスト'
+      : this.sceneData.mode === 'network'
+        ? `無線対戦 (${this.sceneData.localPlayer === 1 ? 'ホスト' : 'ゲスト'})`
+        : `バトル (${playerLabel})`;
 
     this.add.text(GAME_WIDTH / 2, 20, `チームを選べ — ${modeLabel}`, {
       fontFamily: 'system-ui, sans-serif',
@@ -244,33 +251,65 @@ export class TeamSelectScene extends Phaser.Scene {
     const selectedTeam = this.selectedIndices.map(i => this.sceneData.save.ownedMonsters[i]);
 
     if (this.sceneData.mode === 'quest') {
-      // Build CPU team from random monsters
       const cpuTeam: OwnedMonster[] = Array.from({ length: TEAM_SIZE }, () => ({
         uid: generateUid(),
         defId: MONSTER_IDS[Math.floor(Math.random() * MONSTER_IDS.length)],
         ivs: randomIVs(),
       }));
+      this.scene.start('Battle', { mode: 'quest', p1Team: selectedTeam, p2Team: cpuTeam });
 
-      this.scene.start('Battle', {
-        mode: 'quest',
-        p1Team: selectedTeam,
-        p2Team: cpuTeam,
-      });
+    } else if (this.sceneData.mode === 'network') {
+      this.confirmNetworkTeam(selectedTeam);
+
     } else if (this.sceneData.playerNum === 1) {
-      // PvP: P1 done, now P2 selects
       this.scene.start('TeamSelect', {
-        mode: 'pvp',
-        save: this.sceneData.save,
-        playerNum: 2,
-        p1Team: selectedTeam,
+        mode: 'pvp', save: this.sceneData.save, playerNum: 2, p1Team: selectedTeam,
       });
     } else {
-      // PvP: both teams selected
-      this.scene.start('Battle', {
-        mode: 'pvp',
-        p1Team: this.sceneData.p1Team!,
-        p2Team: selectedTeam,
-      });
+      this.scene.start('Battle', { mode: 'pvp', p1Team: this.sceneData.p1Team!, p2Team: selectedTeam });
     }
+  }
+
+  private confirmNetworkTeam(myTeam: OwnedMonster[]): void {
+    const localPlayer = this.sceneData.localPlayer ?? 1;
+    this.disableAllCards();
+
+    const countText = this.children.getByName('selectCount') as Phaser.GameObjects.Text | null;
+    if (countText) countText.setText('相手のチームを待っています...');
+
+    if (localPlayer === 1) {
+      // Host: wait for guest's team, then send startBattle to guest
+      NetManager.onMessage = (msg: NetworkMsg) => {
+        if (msg.type !== 'team') return;
+        const p2Team = msg.team;
+        NetManager.send({ type: 'startBattle', p1Team: myTeam, p2Team });
+        NetManager.onMessage = undefined;
+        this.scene.start('Battle', {
+          mode: 'network', localPlayer: 1, p1Team: myTeam, p2Team,
+        });
+      };
+      // Signal readiness by sending our team first
+      NetManager.send({ type: 'team', team: myTeam });
+    } else {
+      // Guest: send team to host, wait for startBattle
+      NetManager.send({ type: 'team', team: myTeam });
+      NetManager.onMessage = (msg: NetworkMsg) => {
+        if (msg.type !== 'startBattle') return;
+        NetManager.onMessage = undefined;
+        this.scene.start('Battle', {
+          mode: 'network', localPlayer: 2, p1Team: msg.p1Team, p2Team: msg.p2Team,
+        });
+      };
+    }
+  }
+
+  private disableAllCards(): void {
+    this.cards.forEach(c => {
+      c.removeAllListeners();
+      (c as any).bg?.setFillStyle(0x111111);
+    });
+    const dim = (this.startBtn as any).dimOverlay as Phaser.GameObjects.Rectangle;
+    dim.setVisible(true);
+    this.startBtn.removeAllListeners();
   }
 }
