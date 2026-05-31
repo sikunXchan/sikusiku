@@ -6,6 +6,7 @@ import { MonsterListScene } from './scenes/MonsterListScene';
 import { TeamSelectScene } from './scenes/TeamSelectScene';
 import { LobbyScene } from './scenes/LobbyScene';
 import { EncyclopediaScene } from './scenes/EncyclopediaScene';
+import { ShopScene } from './scenes/ShopScene';
 import { setupMobile } from './mobile';
 
 setupMobile();
@@ -35,7 +36,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, TitleScene, LobbyScene, MonsterListScene, TeamSelectScene, BattleScene, EncyclopediaScene],
+  scene: [BootScene, TitleScene, LobbyScene, MonsterListScene, TeamSelectScene, BattleScene, EncyclopediaScene, ShopScene],
 };
 
 const game = new Phaser.Game(config);
