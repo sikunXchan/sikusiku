@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
 import { BattleScene } from './scenes/BattleScene';
+import { TitleScene } from './scenes/TitleScene';
+import { MonsterListScene } from './scenes/MonsterListScene';
+import { TeamSelectScene } from './scenes/TeamSelectScene';
 import { setupMobile } from './mobile';
 
 setupMobile();
@@ -30,7 +33,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, BattleScene],
+  scene: [BootScene, TitleScene, MonsterListScene, TeamSelectScene, BattleScene],
 };
 
 new Phaser.Game(config);
