@@ -25,14 +25,16 @@ function defaultSave(): GameSave {
       { uid: generateUid(), defId: 'chakun',   ivs: randomIVs() },
       { uid: generateUid(), defId: 'shikun',   ivs: randomIVs() },
       { uid: generateUid(), defId: 'lily',     ivs: randomIVs() },
-      { uid: generateUid(), defId: 'medama',   ivs: randomIVs() },
-      { uid: generateUid(), defId: 'darkking', ivs: randomIVs() },
+      { uid: generateUid(), defId: 'medama',     ivs: randomIVs() },
+      { uid: generateUid(), defId: 'darkking',  ivs: randomIVs() },
+      { uid: generateUid(), defId: 'roncha',    ivs: randomIVs() },
+      { uid: generateUid(), defId: 'darkshikun',ivs: randomIVs() },
     ],
   };
 }
 
 function migrateSave(save: GameSave): GameSave {
-  const additions: string[] = ['medama', 'darkking'];
+  const additions: string[] = ['medama', 'darkking', 'roncha', 'darkshikun'];
   let changed = false;
   for (const defId of additions) {
     if (!save.ownedMonsters.some(m => m.defId === defId)) {

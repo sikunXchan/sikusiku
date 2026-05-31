@@ -67,6 +67,8 @@ const STATUS_DESCS: Record<string, string> = {
   atkDebuffOnOpponent: '⬇ こうげき低下\n攻撃力が下がっている',
   counterReady:        '🛡 カウンター準備中\n次の攻撃を跳ね返す',
   counterFailed:       '🔗 カウンター失敗\n次のターン行動不可',
+  shield:              '🛡 シールド\n50ダメまで吸収。割れると25反射',
+  healPercent:         '💚 回復中\n毎ターン最大HP10%回復',
 };
 
 export class BattleScene extends Phaser.Scene {
@@ -594,6 +596,9 @@ export class BattleScene extends Phaser.Scene {
       case 'ohko':              this.aOhko(ev.player, ev.succeeded, done); break;
       case 'statusApply':       this.aStatusApply(ev.target, ev.statusType, done); break;
       case 'statusTick':        this.aStatusTick(ev.player, ev.statusType, ev.damage, done); break;
+      case 'heal':              this.aHeal(ev.player, ev.amount, done); break;
+      case 'shieldBreak':       this.aShieldBreak(ev.player, ev.reflectDamage, done); break;
+      case 'sacrifice':         this.aSacrifice(ev.player, ev.revived, ev.allyIdx, done); break;
       case 'faint':             this.aFaint(ev.player, done); break;
       case 'gameOver':          this.showGameOver(ev.winner); break;
       default:                  done();
@@ -687,25 +692,41 @@ export class BattleScene extends Phaser.Scene {
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
     this.setLog(`${mon.monsterDef.name}: ${desc}`);
 
-    const isCurse = ['akumanoroi','kyuushoNoroi','drumming','furueru'].includes(moveId);
-    const color = isCurse ? 0xaa44ff : 0xffd700;
+    const isCurse = ['akumanoroi','kyuushoNoroi','drumming','furueru','hakkyou'].includes(moveId);
+    const isShield = moveId === 'haki';
+    const isHeal   = moveId === 'shinpiNoroi';
 
-    if (isCurse) {
-      // Curse: dark spiral effect
+    if (isShield) {
+      // Blue barrier rings
+      for (let r = 1; r <= 3; r++) {
+        const ring = this.add.circle(sp.x, sp.y, 40 * r / 3, 0xaaddff, 0.3 - r * 0.06)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: ring, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 700, delay: r * 100, onComplete: () => ring.destroy() });
+      }
+      this.pop(sp.x, sp.y - 90, '🔵 シールド!', '#aaddff', 20);
+    } else if (isHeal) {
+      // Green rising sparkles
+      for (let i = 0; i < 5; i++) {
+        const orb = this.add.circle(sp.x + Phaser.Math.Between(-30, 30), sp.y + 20, 5, 0x44ff88, 0.9)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: orb, y: sp.y - 60, alpha: 0, duration: 700, delay: i * 100, onComplete: () => orb.destroy() });
+      }
+      this.pop(sp.x, sp.y - 90, desc, '#44ff88', 17);
+    } else if (isCurse) {
       for (let i = 0; i < 6; i++) {
         const angle = (i / 6) * Math.PI * 2;
-        const orb = this.add.circle(sp.x + Math.cos(angle) * 50, sp.y + Math.sin(angle) * 50, 6, color, 0.9)
+        const orb = this.add.circle(sp.x + Math.cos(angle) * 50, sp.y + Math.sin(angle) * 50, 6, 0xaa44ff, 0.9)
           .setBlendMode(Phaser.BlendModes.ADD);
-        this.tweens.add({ targets: orb, x: sp.x, y: sp.y, alpha: 0, duration: 500, delay: i * 60,
-          onComplete: () => orb.destroy() });
+        this.tweens.add({ targets: orb, x: sp.x, y: sp.y, alpha: 0, duration: 500, delay: i * 60, onComplete: () => orb.destroy() });
       }
+      this.pop(sp.x, sp.y - 90, desc, '#dd88ff', 17);
     } else {
-      const glow = this.add.circle(sp.x, sp.y, 56, color, 0.25).setBlendMode(Phaser.BlendModes.ADD);
+      const glow = this.add.circle(sp.x, sp.y, 56, 0xffd700, 0.25).setBlendMode(Phaser.BlendModes.ADD);
       this.tweens.add({ targets: glow, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 700, onComplete: () => glow.destroy() });
+      this.pop(sp.x, sp.y - 90, desc, '#ffd700', 17);
     }
 
     this.tweens.add({ targets: sp, scaleX: sp.scaleX * 1.12, scaleY: sp.scaleY * 1.12, duration: 200, yoyo: true });
-    this.pop(sp.x, sp.y - 90, desc, isCurse ? '#dd88ff' : '#ffd700', 17);
     this.refreshStatusIcons();
     this.time.delayedCall(1400, done);
   }
@@ -792,11 +813,12 @@ export class BattleScene extends Phaser.Scene {
   private aStatusApply(target: 1|2, statusType: StatusEffectType, done: () => void): void {
     const sp = target === 1 ? this.playerSprite : this.enemySprite;
     const labels: Record<string, [string, number]> = {
-      burn:     ['🔥 やけど!', 0xff4400],
-      paralyze: ['⚡ まひ!',   0xffee00],
-      poison:   ['☠ どく!',   0x88ff44],
+      burn:     ['🔥 やけど!',    0xff4400],
+      paralyze: ['⚡ まひ!',      0xffee00],
+      poison:   ['☠ どく!',      0x88ff44],
       confuse:  ['😵 こんらん!', 0xff88ff],
       bind:     ['🔒 そくばく!', 0x4488ff],
+      shield:   ['🛡 シールド!', 0xaaddff],
     };
     const [label, color] = labels[statusType] ?? [`${statusType}!`, 0xffffff];
     this.pop(sp.x, sp.y - 90, label, `#${color.toString(16).padStart(6,'0')}`, 22);
@@ -844,6 +866,75 @@ export class BattleScene extends Phaser.Scene {
     this.pop(defSp.x, defSp.y - 88, `${damage}!`, '#d070ff', 42);
     this.syncAllHpBars();
     this.time.delayedCall(1100, done);
+  }
+
+  private aHeal(player: 1|2, amount: number, done: () => void): void {
+    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
+    this.setLog(`${mon.monsterDef.name} のHP が回復した!`);
+    // Green rising particles
+    for (let i = 0; i < 6; i++) {
+      const px = sp.x + Phaser.Math.Between(-40, 40);
+      const py = sp.y + Phaser.Math.Between(-20, 20);
+      const orb = this.add.circle(px, py, 5, 0x44ff88, 0.9).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: orb, y: py - 60, alpha: 0, duration: 700, delay: i * 80, onComplete: () => orb.destroy() });
+    }
+    const glow = this.add.circle(sp.x, sp.y, 50, 0x44ff88, 0.22).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: glow, scaleX: 1.8, scaleY: 1.8, alpha: 0, duration: 800, onComplete: () => glow.destroy() });
+    this.pop(sp.x, sp.y - 80, `+${amount}`, '#44ff88', 26);
+    this.syncAllHpBars();
+    this.time.delayedCall(1000, done);
+  }
+
+  private aShieldBreak(defPlayer: 1|2, reflectDamage: number, done: () => void): void {
+    const defSp = defPlayer === 1 ? this.playerSprite : this.enemySprite;
+    const atkSp = defPlayer === 1 ? this.enemySprite : this.playerSprite;
+    const mon = defPlayer === 1 ? this.engine.p1Active : this.engine.p2Active;
+    this.setLog(`${mon.monsterDef.name} のシールドが割れた! ${reflectDamage}ダメ反射!`);
+    // Shield shatter effect on defender
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const shard = this.add.rectangle(
+        defSp.x + Math.cos(angle) * 30, defSp.y + Math.sin(angle) * 30,
+        6, 14, 0xaaddff, 0.85,
+      ).setAngle(angle * 57.3).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({
+        targets: shard, x: shard.x + Math.cos(angle) * 60, y: shard.y + Math.sin(angle) * 60,
+        alpha: 0, duration: 500, delay: i * 30, onComplete: () => shard.destroy(),
+      });
+    }
+    // Reflected damage flies to attacker
+    this.time.delayedCall(300, () => {
+      this.fx.hitBurst(atkSp.x, atkSp.y - 30, 0xaaddff, false);
+      this.flashImg(atkSp);
+      this.pop(atkSp.x, atkSp.y - 75, `-${reflectDamage}`, '#aaddff', 24);
+      this.syncAllHpBars();
+    });
+    this.time.delayedCall(1100, done);
+  }
+
+  private aSacrifice(player: 1|2, revived: boolean, allyIdx: number, done: () => void): void {
+    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
+    const team = player === 1 ? this.engine.p1Team : this.engine.p2Team;
+    const allyName = allyIdx >= 0 ? team[allyIdx].monsterDef.name : '?';
+    const logMsg = revived
+      ? `${mon.monsterDef.name} がみがわり! ${allyName} が復活!`
+      : `${mon.monsterDef.name} がみがわり! ${allyName} が全回復!`;
+    this.setLog(logMsg);
+    // Golden aura burst
+    const glow = this.add.circle(sp.x, sp.y, 55, 0xffd700, 0.5).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: glow, scaleX: 2.5, scaleY: 2.5, alpha: 0, duration: 900, onComplete: () => glow.destroy() });
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const orb = this.add.circle(sp.x + Math.cos(angle) * 50, sp.y + Math.sin(angle) * 50, 7, 0xffd700, 0.9)
+        .setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: orb, x: sp.x, y: sp.y, alpha: 0, duration: 600, delay: i * 50, onComplete: () => orb.destroy() });
+    }
+    this.tweens.add({ targets: sp, alpha: 0.1, duration: 600, yoyo: true, repeat: 1 });
+    this.syncAllHpBars();
+    this.refreshDots();
+    this.time.delayedCall(1400, done);
   }
 
   private aFaint(player: 1|2, done: () => void): void {
@@ -1276,6 +1367,7 @@ export class BattleScene extends Phaser.Scene {
     const icons: Record<string, string> = {
       burn: '🔥', paralyze: '⚡', poison: '☠', confuse: '😵', bind: '🔒',
       critBoost: '✨', atkDebuffOnOpponent: '⬇', counterReady: '🛡', counterFailed: '🔗',
+      shield: '🔵', healPercent: '💚',
     };
     const fillIcons = (
       team: BattleMonster[], list: Phaser.GameObjects.Text[], typeList: string[],

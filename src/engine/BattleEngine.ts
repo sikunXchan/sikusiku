@@ -351,7 +351,7 @@ export class BattleEngine {
           if (!opponentAttacked) {
             const dodged = defender.dodgingThisTurn && !move.guaranteed;
             if (!dodged) {
-              const dmg = this.applyDamage(attacker, defender, effect.value, atkSnap, false);
+              const dmg = this.applyDamage(attacker, defender, effect.value, atkSnap, false, events, player);
               events.push({ type: 'conditionalDamage', player, damage: dmg, dodged: false });
             } else {
               events.push({ type: 'conditionalDamage', player, damage: 0, dodged: true });
@@ -397,6 +397,39 @@ export class BattleEngine {
           defender.statusEffects.push({ type: 'atkDebuffOnOpponent', multiplier: 0.9, turnsLeft: effect.value, delay: 0 });
           events.push({ type: 'buff', player, moveId, description: `${effect.value}ターン間、相手ATK-10%` });
           break;
+        case 'applyHealPercent':
+          // Heal self X% max HP per turn for 2 turns
+          attacker.statusEffects.push({ type: 'healPercent', multiplier: effect.value, turnsLeft: 2, delay: 0 });
+          events.push({ type: 'buff', player, moveId, description: `2ターン間、毎ターン最大HP${effect.value}%回復` });
+          break;
+        case 'applyShield':
+          if (!this.hasStatus(attacker, 'shield')) {
+            attacker.statusEffects.push({ type: 'shield', multiplier: effect.value, turnsLeft: -1, delay: 0 });
+            events.push({ type: 'buff', player, moveId, description: `${effect.value}ダメージまで吸収するシールド!` });
+          }
+          break;
+        case 'sacrificeRevive': {
+          const team = player === 1 ? this.p1Team : this.p2Team;
+          const activeIdx = player === 1 ? this.p1ActiveIdx : this.p2ActiveIdx;
+          const fainted = team.map((m, i) => ({ m, i })).filter(({ m, i }) => m.fainted && i !== activeIdx);
+          const alive   = team.map((m, i) => ({ m, i })).filter(({ m, i }) => !m.fainted && i !== activeIdx);
+          attacker.currentHp = 0;
+          attacker.fainted = true;
+          if (fainted.length > 0) {
+            const pick = fainted[Math.floor(Math.random() * fainted.length)];
+            pick.m.currentHp = pick.m.maxHp;
+            pick.m.fainted = false;
+            pick.m.statusEffects = [];
+            events.push({ type: 'sacrifice', player, revived: true, allyIdx: pick.i });
+          } else if (alive.length > 0) {
+            const pick = alive[Math.floor(Math.random() * alive.length)];
+            pick.m.currentHp = pick.m.maxHp;
+            events.push({ type: 'sacrifice', player, revived: false, allyIdx: pick.i });
+          } else {
+            events.push({ type: 'sacrifice', player, revived: false, allyIdx: -1 });
+          }
+          return; // no further processing (attacker is dead)
+        }
         case 'ohko': {
           const dodged = defender.dodgingThisTurn;
           const countered = this.hasStatus(defender, 'counterReady');
@@ -432,7 +465,7 @@ export class BattleEngine {
         const forceCrit = this.hasStatus(attacker, 'critBoost');
         const critical = forceCrit || Math.random() < CRIT_RATE;
         const raw = this.calcDamage(attacker, defender, atkSnap, move.baseDamage, critical);
-        const actual = this.applyDamage(attacker, defender, raw, atkSnap, critical);
+        const actual = this.applyDamage(attacker, defender, raw, atkSnap, critical, events, player);
         events.push({ type: 'attack', player, moveId, damage: actual, critical, dodged: false });
       }
     }
@@ -466,11 +499,13 @@ export class BattleEngine {
   }
 
   private applyDamage(
-    _attacker: BattleMonster,
+    attacker: BattleMonster,
     defender: BattleMonster,
     damage: number,
     _atkSnap: number,
     _critical: boolean,
+    events?: BattleEvent[],
+    atkPlayer?: 1|2,
   ): number {
     const takenIdx = defender.statusEffects.findIndex(se => se.type === 'damageTakenBoostSelf' && se.delay === 0);
     let mult = 1;
@@ -479,7 +514,27 @@ export class BattleEngine {
       defender.statusEffects.splice(takenIdx, 1);
     }
 
-    const final = Math.floor(damage * mult);
+    let final = Math.floor(damage * mult);
+
+    // Shield absorption
+    const shieldIdx = defender.statusEffects.findIndex(se => se.type === 'shield' && se.delay === 0);
+    if (shieldIdx >= 0 && events && atkPlayer !== undefined) {
+      const se = defender.statusEffects[shieldIdx];
+      const remaining = se.multiplier ?? 50;
+      const absorbed = Math.min(final, remaining);
+      se.multiplier = remaining - absorbed;
+      final -= absorbed;
+      if (se.multiplier <= 0) {
+        // Shield breaks — reflect 50% of total capacity (25) back to attacker
+        defender.statusEffects.splice(shieldIdx, 1);
+        const reflectedDmg = 25; // half of 50 cap
+        attacker.currentHp = Math.max(0, attacker.currentHp - reflectedDmg);
+        if (attacker.currentHp <= 0) attacker.fainted = true;
+        const defPlayer: 1|2 = atkPlayer === 1 ? 2 : 1;
+        events.push({ type: 'shieldBreak', player: defPlayer, reflectDamage: reflectedDmg });
+      }
+    }
+
     defender.currentHp = Math.max(0, defender.currentHp - final);
     if (defender.currentHp <= 0) defender.fainted = true;
     return final;
@@ -498,6 +553,10 @@ export class BattleEngine {
         monster.currentHp = Math.max(0, monster.currentHp - dmg);
         if (monster.currentHp <= 0) monster.fainted = true;
         events.push({ type: 'statusTick', player, statusType: 'poison', damage: dmg });
+      } else if (se.type === 'healPercent') {
+        const amt = Math.max(1, Math.floor(monster.maxHp * (se.multiplier ?? 10) / 100));
+        monster.currentHp = Math.min(monster.maxHp, monster.currentHp + amt);
+        events.push({ type: 'heal', player, amount: amt });
       }
     }
   }
