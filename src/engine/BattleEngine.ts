@@ -1,6 +1,7 @@
 import { getMove } from '../data/moves';
 import { getMonsterDef } from '../data/monsters';
-import { applyIV } from '../data/types';
+import { applyIV, typeEffectiveness, STAB_MULT } from '../data/types';
+import type { MonsterType } from '../data/types';
 import type {
   BattleAction,
   BattleEvent,
@@ -51,7 +52,7 @@ export class BattleEngine {
   get p2Active(): BattleMonster { return this.p2Team[this.p2ActiveIdx]; }
 
   isMoveReady(monster: BattleMonster, moveId: string): boolean {
-    if (this.hasStatus(monster, 'bind') || this.hasStatus(monster, 'counterFailed')) return false;
+    if (this.hasStatus(monster, 'counterFailed')) return false;
     return (monster.moveCooldowns[moveId] ?? 0) <= this.turn;
   }
 
@@ -457,12 +458,12 @@ export class BattleEngine {
         case 'maxHpDamage': {
           const dodgedMhp = defender.dodgingThisTurn && !(move.guaranteed && this.weather !== 'fog');
           if (dodgedMhp) {
-            events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: true });
+            events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: true, effectiveness: 1 });
           } else {
             const dmg = Math.max(1, Math.floor(defender.maxHp * effect.value / 100));
             defender.currentHp = Math.max(0, defender.currentHp - dmg);
             if (defender.currentHp <= 0) defender.fainted = true;
-            events.push({ type: 'attack', player, moveId, damage: dmg, critical: false, dodged: false });
+            events.push({ type: 'attack', player, moveId, damage: dmg, critical: false, dodged: false, effectiveness: 1 });
           }
           break;
         }
@@ -524,17 +525,18 @@ export class BattleEngine {
     if (move.baseDamage > 0) {
       const dodged = defender.dodgingThisTurn && !(move.guaranteed && this.weather !== 'fog');
       const countered = !dodged && this.hasStatus(defender, 'counterReady');
+      const eff = typeEffectiveness(move.moveType, defender.monsterDef.type);
       if (dodged) {
-        events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: true });
+        events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: true, effectiveness: eff });
       } else if (countered) {
         // Damage will be resolved in resolveCounter
-        events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: false });
+        events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: false, effectiveness: eff });
       } else {
         const forceCrit = this.weather !== 'dark' && this.hasStatus(attacker, 'critBoost');
         const critical = this.weather !== 'dark' && (forceCrit || Math.random() < CRIT_RATE);
-        const raw = this.calcDamage(attacker, defender, atkSnap, move.baseDamage, critical);
+        const raw = this.calcDamage(attacker, defender, atkSnap, move.baseDamage, critical, move.moveType);
         const actual = this.applyDamage(attacker, defender, raw, atkSnap, critical, events, player);
-        events.push({ type: 'attack', player, moveId, damage: actual, critical, dodged: false });
+        events.push({ type: 'attack', player, moveId, damage: actual, critical, dodged: false, effectiveness: eff });
       }
     }
   }
@@ -545,6 +547,7 @@ export class BattleEngine {
     atkSnap: number,
     baseDmg: number,
     critical: boolean,
+    moveType?: MonsterType,
   ): number {
     // Apply atkDebuffOnOpponent (最悪な呪い: reduces attacker's effective ATK)
     let effectiveAtk = atkSnap;
@@ -560,6 +563,12 @@ export class BattleEngine {
     if (boostIdx >= 0) {
       dmg = Math.floor(dmg * (attacker.statusEffects[boostIdx].multiplier ?? 1));
       attacker.statusEffects.splice(boostIdx, 1);
+    }
+
+    if (moveType) {
+      const eff = typeEffectiveness(moveType, defender.monsterDef.type);
+      const stab = attacker.monsterDef.type === moveType ? STAB_MULT : 1;
+      dmg = Math.floor(dmg * eff * stab);
     }
 
     if (critical) dmg = Math.floor(dmg * CRIT_MULT);

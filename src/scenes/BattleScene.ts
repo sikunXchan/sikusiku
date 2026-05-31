@@ -7,6 +7,7 @@ import { Effects } from '../fx/Effects';
 import { NetManager } from '../net/NetManager';
 import { addOwnedMonster, loadSave, persistSave, randomIVs } from '../storage/SaveData';
 import type { NetworkMsg } from '../net/messages';
+import { TYPE_NAMES, TYPE_COLORS } from '../data/types';
 import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster, StatusEffect, StatusEffectType, WeatherType } from '../data/types';
 
 // Layout constants
@@ -37,6 +38,7 @@ interface HpBarUI {
   fill: Phaser.GameObjects.Rectangle;
   text: Phaser.GameObjects.Text;
   nameText: Phaser.GameObjects.Text;
+  typeBadge: Phaser.GameObjects.Text;
   maxW: number;
   defaultColor: number;
 }
@@ -71,7 +73,7 @@ const STATUS_DESCS: Record<string, string> = {
   paralyze:            '⚡ まひ\n20%の確率で技が失敗',
   poison:              '☠ どく\n毎ターン 現在HP÷8 ダメ',
   confuse:             '😵 こんらん\n15%の確率で技失敗\n失敗時は自傷ダメあり',
-  bind:                '🔒 そくばく\n1ターン 行動・交代不可',
+  bind:                '🔒 そくばく\n1ターン 交代不可',
   critBoost:           '✨ 急所の呪い\n必ず急所に当たる',
   atkDebuffOnOpponent: '⬇ こうげき低下\n攻撃力が下がっている',
   atkDown:             '⬇ ATK低下\n攻撃力が下がっている',
@@ -226,13 +228,17 @@ export class BattleScene extends Phaser.Scene {
     const nameText = this.add.text(x, y - 22, mon.monsterDef.name, {
       fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#cccccc', fontStyle: 'bold',
     }).setDepth(D);
+    const typeColor = '#' + TYPE_COLORS[mon.monsterDef.type].toString(16).padStart(6, '0');
+    const typeBadge = this.add.text(x + 110, y - 22, `[${TYPE_NAMES[mon.monsterDef.type]}]`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: typeColor,
+    }).setDepth(D);
     this.add.rectangle(x + HP_BAR_W / 2, y + HP_BAR_H / 2, HP_BAR_W, HP_BAR_H, 0x111111).setDepth(D);
     this.add.rectangle(x + HP_BAR_W / 2, y + HP_BAR_H / 2, HP_BAR_W, HP_BAR_H, 0).setStrokeStyle(1, 0x444444).setDepth(D);
     const fill = this.add.rectangle(x, y, HP_BAR_W, HP_BAR_H, color).setOrigin(0, 0).setDepth(D);
     const text = this.add.text(x + HP_BAR_W + 6, y + HP_BAR_H / 2, `${mon.currentHp}/${mon.maxHp}`, {
       fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#aaaaaa',
     }).setOrigin(0, 0.5).setDepth(D);
-    return { fill, text, nameText, maxW: HP_BAR_W, defaultColor: color };
+    return { fill, text, nameText, typeBadge, maxW: HP_BAR_W, defaultColor: color };
   }
 
   private syncHpBar(mon: BattleMonster, ui: HpBarUI): void {
@@ -241,6 +247,8 @@ export class BattleScene extends Phaser.Scene {
     ui.text.setText(`${mon.currentHp}/${mon.maxHp}`);
     ui.nameText.setText(mon.monsterDef.name);
     ui.fill.setFillStyle(ratio < 0.2 ? 0xff3333 : ratio < 0.5 ? 0xffaa00 : ui.defaultColor);
+    const typeColor = '#' + TYPE_COLORS[mon.monsterDef.type].toString(16).padStart(6, '0');
+    ui.typeBadge.setText(`[${TYPE_NAMES[mon.monsterDef.type]}]`).setColor(typeColor);
   }
 
   private syncAllHpBars(): void {
@@ -669,7 +677,7 @@ export class BattleScene extends Phaser.Scene {
     switch (ev.type) {
       case 'switch':            this.aSwitch(ev.player, ev.toIdx, done); break;
       case 'dodge':             this.aDodge(ev.player, done); break;
-      case 'attack':            this.aAttack(ev.player, ev.moveId, ev.damage, ev.critical, ev.dodged, done); break;
+      case 'attack':            this.aAttack(ev.player, ev.moveId, ev.damage, ev.critical, ev.dodged, ev.effectiveness, done); break;
       case 'buff':              this.aBuff(ev.player, ev.moveId, ev.description, done); break;
       case 'atkDebuff':         this.aAtkDebuff(ev.target, done); break;
       case 'conditionalDamage': this.aConditional(ev.player, ev.damage, ev.dodged, done); break;
@@ -730,7 +738,7 @@ export class BattleScene extends Phaser.Scene {
 
   private aAttack(
     player: 1|2, moveId: string, damage: number,
-    critical: boolean, dodged: boolean, done: () => void,
+    critical: boolean, dodged: boolean, effectiveness: number, done: () => void,
   ): void {
     const atkSp = player === 1 ? this.playerSprite : this.enemySprite;
     const defSp = player === 1 ? this.enemySprite : this.playerSprite;
@@ -757,6 +765,8 @@ export class BattleScene extends Phaser.Scene {
         this.pop(defSp.x, defSp.y - 85, critical ? `${damage}!` : `${damage}`,
           critical ? '#ff4444' : '#ffffff', critical ? 46 : 30);
         if (critical) this.pop(defSp.x, defSp.y - 125, 'CRITICAL!', '#ffe066', 18);
+        if (effectiveness > 1.0) this.pop(defSp.x, defSp.y - 148, '効果抜群！', '#ffee44', 16);
+        else if (effectiveness < 1.0) this.pop(defSp.x, defSp.y - 148, '効果がいまいち…', '#888888', 14);
         if (moveId === 'shikken') this.pop(atkSp.x, atkSp.y - 75, '防御低下!', '#ffaa55', 15);
         this.syncAllHpBars();
         const kdir = player === 1 ? 1 : -1;
