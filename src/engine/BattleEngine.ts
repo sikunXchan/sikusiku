@@ -450,6 +450,18 @@ export class BattleEngine {
             events.push({ type: 'buff', player, moveId, description: `${effect.value}ターン間、相手ATK-10%` });
           }
           break;
+        case 'maxHpDamage': {
+          const dodgedMhp = defender.dodgingThisTurn && !(move.guaranteed && this.weather !== 'fog');
+          if (dodgedMhp) {
+            events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: true });
+          } else {
+            const dmg = Math.max(1, Math.floor(defender.maxHp * effect.value / 100));
+            defender.currentHp = Math.max(0, defender.currentHp - dmg);
+            if (defender.currentHp <= 0) defender.fainted = true;
+            events.push({ type: 'attack', player, moveId, damage: dmg, critical: false, dodged: false });
+          }
+          break;
+        }
         case 'applyHealPercent':
           // Heal self X% max HP per turn for 2 turns
           attacker.statusEffects.push({ type: 'healPercent', multiplier: effect.value, turnsLeft: 2, delay: 0 });
