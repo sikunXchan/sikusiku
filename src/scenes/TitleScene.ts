@@ -14,64 +14,38 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private buildBackground(): void {
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x1a1530);
-
-    for (let i = 0; i < 50; i++) {
-      const star = this.add.circle(
-        Phaser.Math.Between(0, GAME_WIDTH),
-        Phaser.Math.Between(0, GAME_HEIGHT),
-        Phaser.Math.FloatBetween(0.5, 2),
-        0xffffff,
-        Phaser.Math.FloatBetween(0.2, 0.8)
-      );
-      this.tweens.add({
-        targets: star,
-        alpha: 0.05,
-        duration: Phaser.Math.Between(1000, 3000),
-        yoyo: true,
-        repeat: -1,
-        delay: Phaser.Math.Between(0, 2000),
-      });
+    // Splash illustration as background
+    if (this.textures.exists('splash')) {
+      const img = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'splash');
+      // Fit to canvas keeping aspect ratio, then cover
+      const scaleX = GAME_WIDTH / img.width;
+      const scaleY = GAME_HEIGHT / img.height;
+      img.setScale(Math.max(scaleX, scaleY));
+    } else {
+      this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x1a1530);
     }
+    // Dark gradient overlay for text legibility
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.45);
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT - 120, GAME_WIDTH, 240, 0x000000, 0.6);
   }
 
   private buildTitle(): void {
-    this.add.text(GAME_WIDTH / 2, 100, 'しくん&ちゃくん', {
+    this.add.text(GAME_WIDTH / 2, 80, 'しくん&ちゃくん', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '54px',
       color: '#ffffff',
       fontStyle: 'bold',
-      stroke: '#5a4cd0',
-      strokeThickness: 8,
+      stroke: '#1a1530',
+      strokeThickness: 10,
     }).setOrigin(0.5);
 
-    this.add.text(GAME_WIDTH / 2, 160, 'モンスターバトル', {
+    this.add.text(GAME_WIDTH / 2, 148, 'モンスターバトル', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '28px',
       color: '#9be7ff',
+      stroke: '#000000',
+      strokeThickness: 6,
     }).setOrigin(0.5);
-
-    // Show monster sprites preview
-    const monsterKeys = [
-      { key: 'chakun_front', x: 180 },
-      { key: 'shikun_front', x: GAME_WIDTH / 2 },
-      { key: 'lily_front', x: GAME_WIDTH - 180 },
-    ];
-
-    for (const { key, x } of monsterKeys) {
-      if (this.textures.exists(key)) {
-        const sprite = this.add.image(x, 290, key).setScale(2.5).setAlpha(0.7);
-        this.tweens.add({
-          targets: sprite,
-          y: 285,
-          duration: 1500,
-          yoyo: true,
-          repeat: -1,
-          ease: 'Sine.easeInOut',
-          delay: Phaser.Math.Between(0, 500),
-        });
-      }
-    }
   }
 
   private buildMenu(): void {

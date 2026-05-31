@@ -12,6 +12,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image('shikun_back', 'shikun_behind.PNG');
     this.load.image('lily_front', 'lily.PNG');
     this.load.image('lily_back', 'lily_behind.PNG');
+    this.load.image('splash', 'E70C9508-DA99-44B5-983B-A35932A601AF.png');
   }
 
   create(): void {

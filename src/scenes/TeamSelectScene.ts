@@ -85,7 +85,7 @@ export class TeamSelectScene extends Phaser.Scene {
       bg.setStrokeStyle(2, 0x5a4cd0, 0.6);
 
       const sprite = this.textures.exists(def.frontSprite)
-        ? this.add.image(0, -60, def.frontSprite).setScale(2.2)
+        ? this.add.image(0, -60, def.frontSprite).setDisplaySize(140, 130)
         : this.add.rectangle(0, -60, 60, 70, 0x555555) as unknown as Phaser.GameObjects.Image;
 
       const nameText = this.add.text(0, 25, def.name, {
