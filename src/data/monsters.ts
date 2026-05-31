@@ -4,7 +4,6 @@ export const MONSTERS: Record<string, MonsterDef> = {
   chakun: {
     id: 'chakun',
     name: 'ちゃくん',
-    type: 'fight',
     frontSprite: 'chakun_front',
     backSprite: 'chakun_back',
     baseStats: { hp: 220, atk: 100, def: 110 },
@@ -14,7 +13,6 @@ export const MONSTERS: Record<string, MonsterDef> = {
   shikun: {
     id: 'shikun',
     name: 'しくん',
-    type: 'normal',
     frontSprite: 'shikun_front',
     backSprite: 'shikun_back',
     baseStats: { hp: 200, atk: 120, def: 90 },
@@ -24,7 +22,6 @@ export const MONSTERS: Record<string, MonsterDef> = {
   lily: {
     id: 'lily',
     name: 'リリー',
-    type: 'nature',
     frontSprite: 'lily_front',
     backSprite: 'lily_back',
     baseStats: { hp: 240, atk: 90, def: 100 },
@@ -34,7 +31,6 @@ export const MONSTERS: Record<string, MonsterDef> = {
   medama: {
     id: 'medama',
     name: 'めだまモンスター',
-    type: 'mystic',
     frontSprite: 'medama_front',
     backSprite: 'medama_back',
     baseStats: { hp: 190, atk: 95, def: 105 },
@@ -44,7 +40,6 @@ export const MONSTERS: Record<string, MonsterDef> = {
   darkking: {
     id: 'darkking',
     name: '闇の王',
-    type: 'dark',
     frontSprite: 'darkking_front',
     backSprite: 'darkking_back',
     baseStats: { hp: 210, atk: 130, def: 70 },
@@ -54,7 +49,6 @@ export const MONSTERS: Record<string, MonsterDef> = {
   roncha: {
     id: 'roncha',
     name: 'ロンチャ',
-    type: 'nature',
     frontSprite: 'roncha_front',
     backSprite: 'roncha_back',
     baseStats: { hp: 200, atk: 80, def: 130 },
@@ -64,12 +58,20 @@ export const MONSTERS: Record<string, MonsterDef> = {
   darkshikun: {
     id: 'darkshikun',
     name: '闇堕ちしくん',
-    type: 'dark',
     frontSprite: 'darkshikun_front',
     backSprite: 'darkshikun_back',
     baseStats: { hp: 190, atk: 115, def: 95 },
     moveIds: ['kyoufu', 'haki', 'yamiNoShikken'],
     catchRate: 20,
+  },
+  lilyenma: {
+    id: 'lilyenma',
+    name: 'リリー閻魔大王',
+    frontSprite: 'lilyenma_front',
+    backSprite: 'lilyenma_back',
+    baseStats: { hp: 220, atk: 110, def: 90 },
+    moveIds: ['kawasu', 'haki', 'clusterBombing'],
+    catchRate: 10,
   },
 };
 

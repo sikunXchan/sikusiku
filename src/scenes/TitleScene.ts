@@ -3,113 +3,91 @@ import { GAME_WIDTH, GAME_HEIGHT } from '../main';
 import { loadSave } from '../storage/SaveData';
 
 export class TitleScene extends Phaser.Scene {
-  constructor() {
-    super('Title');
-  }
+  constructor() { super('Title'); }
 
   create(): void {
     this.buildBackground();
     this.buildTitle();
     this.buildMenu();
+    this.buildNikukyuBadge();
   }
 
   private buildBackground(): void {
-    // Splash illustration as background
     if (this.textures.exists('splash')) {
       const img = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, 'splash');
-      // Fit to canvas keeping aspect ratio, then cover
-      const scaleX = GAME_WIDTH / img.width;
-      const scaleY = GAME_HEIGHT / img.height;
-      img.setScale(Math.max(scaleX, scaleY));
+      img.setScale(Math.max(GAME_WIDTH / img.width, GAME_HEIGHT / img.height));
     } else {
       this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x1a1530);
     }
-    // Dark gradient overlay for text legibility
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.45);
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT - 120, GAME_WIDTH, 240, 0x000000, 0.6);
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT - 95, GAME_WIDTH, 190, 0x000000, 0.65);
   }
 
   private buildTitle(): void {
-    this.add.text(GAME_WIDTH / 2, 80, 'しくん&ちゃくん', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '54px',
-      color: '#ffffff',
-      fontStyle: 'bold',
-      stroke: '#1a1530',
-      strokeThickness: 10,
+    this.add.text(GAME_WIDTH / 2, 72, 'しくん&ちゃくん', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '52px', color: '#ffffff',
+      fontStyle: 'bold', stroke: '#1a1530', strokeThickness: 10,
     }).setOrigin(0.5);
-
-    this.add.text(GAME_WIDTH / 2, 148, 'モンスターバトル', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '28px',
-      color: '#9be7ff',
-      stroke: '#000000',
-      strokeThickness: 6,
+    this.add.text(GAME_WIDTH / 2, 140, 'モンスターバトル', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '26px', color: '#9be7ff',
+      stroke: '#000000', strokeThickness: 6,
     }).setOrigin(0.5);
   }
 
   private buildMenu(): void {
+    // 2 cols × 3 rows
+    const BTN_W  = 445;
+    const BTN_H  = 54;
+    const GAP_X  = 20;
+    const ROW_YS = [388, 450, 512];
+    const LX = GAME_WIDTH / 2 - BTN_W / 2 - GAP_X / 2;
+    const RX = GAME_WIDTH / 2 + BTN_W / 2 + GAP_X / 2;
+
     const buttons = [
-      { label: '🌿 クエスト', sub: 'モンスターを倒して仲間に', color: 0x66ccff, action: () => this.startQuest() },
-      { label: '📡 ちかくで対戦', sub: '別デバイスで無線対戦', color: 0xcc88ff, action: () => this.openLobby() },
-      { label: '📦 マイモンスター', sub: '所持モンスター一覧', color: 0xffd700, action: () => this.openMonsterList() },
+      // Row 1
+      { label: '🌿 クエスト',      sub: 'モンスターを倒して仲間に', color: 0x66ccff, x: LX, y: ROW_YS[0], action: () => this.startMode('quest')    },
+      { label: '⚔️ サバイバル',    sub: 'HP持越しで連勝に挑戦',     color: 0xff8844, x: RX, y: ROW_YS[0], action: () => this.startMode('survival') },
+      // Row 2
+      { label: '📦 マイモンスター', sub: '所持モンスター一覧',         color: 0xffd700, x: LX, y: ROW_YS[1], action: () => this.openMonsterList()    },
+      { label: '📖 図鑑',          sub: '全モンスターを確認',          color: 0x88ffcc, x: RX, y: ROW_YS[1], action: () => this.openEncyclopedia()   },
+      // Row 3
+      { label: '📡 ちかくで対戦', sub: '別デバイスで無線対戦',        color: 0xcc88ff, x: LX, y: ROW_YS[2], action: () => this.openLobby()          },
+      { label: '🛒 ショップ',      sub: 'にくきゅうでアイテムを購入', color: 0xffaa44, x: RX, y: ROW_YS[2], action: () => this.openShop()           },
     ];
 
-    const totalW = buttons.length * 250 + (buttons.length - 1) * 20;
-    let startX = (GAME_WIDTH - totalW) / 2;
-
     for (const btn of buttons) {
-      const x = startX + 130;
-      const y = 440;
-
-      const bg = this.add.rectangle(x, y, 250, 80, btn.color, 0.15);
-      bg.setStrokeStyle(2, btn.color, 0.8);
-      bg.setInteractive({ useHandCursor: true });
-
-      const label = this.add.text(x, y - 12, btn.label, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '22px',
-        color: '#ffffff',
-        fontStyle: 'bold',
+      const bg = this.add.rectangle(btn.x, btn.y, BTN_W, BTN_H, btn.color, 0.12)
+        .setStrokeStyle(2, btn.color, 0.7).setInteractive({ useHandCursor: true });
+      const label = this.add.text(btn.x, btn.y - 10, btn.label, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#ffffff', fontStyle: 'bold',
       }).setOrigin(0.5);
-
-      const sub = this.add.text(x, y + 18, btn.sub, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#aaaaaa',
+      const sub = this.add.text(btn.x, btn.y + 14, btn.sub, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#aaaaaa',
       }).setOrigin(0.5);
-
-      bg.on('pointerover', () => {
-        bg.setAlpha(0.35);
-        this.tweens.add({ targets: [label, sub], y: { value: '-=3' }, duration: 80 });
-      });
-      bg.on('pointerout', () => {
-        bg.setAlpha(0.15);
-        label.y += 3;
-        sub.y += 3;
-      });
+      bg.on('pointerover', () => { bg.setAlpha(0.30); this.tweens.add({ targets: [label, sub], y: { value: '-=3' }, duration: 80 }); });
+      bg.on('pointerout',  () => { bg.setAlpha(0.12); label.y += 3; sub.y += 3; });
       bg.on('pointerdown', btn.action);
-
-      startX += 270;
     }
   }
 
-  private openLobby(): void {
-    this.scene.start('Lobby');
+  private buildNikukyuBadge(): void {
+    const save = loadSave();
+    if (this.textures.exists('nikukyu')) {
+      this.add.image(GAME_WIDTH - 58, 30, 'nikukyu').setDisplaySize(28, 28);
+    }
+    this.add.text(GAME_WIDTH - 38, 30, `×${save.nikukyu ?? 0}`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '17px', color: '#ffbb88',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0, 0.5);
   }
 
-  private startQuest(): void {
+  private startMode(mode: 'quest' | 'survival'): void {
     const save = loadSave();
-    this.scene.start('TeamSelect', {
-      mode: 'quest',
-      save,
-      playerNum: 1,
-      p1Team: null,
-    });
+    this.scene.start('TeamSelect', { mode, save, playerNum: 1, p1Team: null });
   }
 
-  private openMonsterList(): void {
-    const save = loadSave();
-    this.scene.start('MonsterList', { save });
-  }
+  private openLobby():       void { this.scene.start('Lobby'); }
+  private openMonsterList(): void { this.scene.start('MonsterList', { save: loadSave() }); }
+  private openEncyclopedia(): void { this.scene.start('Encyclopedia'); }
+  private openShop():        void { this.scene.start('Shop'); }
 }
