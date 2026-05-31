@@ -2,6 +2,8 @@ import type { OwnedMonster, IVs } from '../data/types';
 
 export interface GameSave {
   ownedMonsters: OwnedMonster[];
+  winCount: number;
+  nikukyu: number;
 }
 
 const SAVE_KEY = 'sikusiku_save_v2';
@@ -27,13 +29,20 @@ function defaultSave(): GameSave {
       { uid: generateUid(), defId: 'chakun',  ivs: randomIVs() },
       { uid: generateUid(), defId: 'roncha',  ivs: randomIVs() },
     ],
+    winCount: 0,
+    nikukyu: 0,
   };
 }
 
 export function loadSave(): GameSave {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) return JSON.parse(raw) as GameSave;
+    if (raw) {
+      const save = JSON.parse(raw) as GameSave;
+      if (save.winCount === undefined) save.winCount = 0;
+      if (save.nikukyu === undefined) save.nikukyu = 0;
+      return save;
+    }
   } catch {
     // ignore
   }

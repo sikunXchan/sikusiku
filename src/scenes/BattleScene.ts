@@ -1223,7 +1223,12 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.add({ targets: banner, scale: 1, duration: 380, ease: 'Back.easeOut' });
 
     if (isWin && this.mode === 'quest') {
-      this.time.delayedCall(800, () => this.showCatchReward());
+      const save = loadSave();
+      save.winCount = (save.winCount ?? 0) + 1;
+      save.nikukyu  = (save.nikukyu  ?? 0) + 1;
+      persistSave(save);
+      this.time.delayedCall(500, () => this.showNikukyuToast(save.nikukyu));
+      this.time.delayedCall(1600, () => this.showCatchReward());
     } else {
       const hint = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 62, 'タップでタイトルへ', {
         fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffffff',
@@ -1231,6 +1236,21 @@ export class BattleScene extends Phaser.Scene {
       this.tweens.add({ targets: hint, alpha: { from: 0.4, to: 1 }, duration: 700, yoyo: true, repeat: -1 });
       this.time.delayedCall(700, () => this.input.once('pointerdown', () => this.scene.start('Title')));
     }
+  }
+
+  private showNikukyuToast(total: number): void {
+    const D = 2050;
+    const toast = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 72).setDepth(D);
+    toast.add(this.add.rectangle(0, 0, 340, 48, 0x1a1010, 0.9).setStrokeStyle(1, 0xff9966));
+    const iconX = this.textures.exists('nikukyu') ? -130 : -100;
+    if (this.textures.exists('nikukyu')) {
+      toast.add(this.add.image(-130, 0, 'nikukyu').setDisplaySize(28, 28));
+    }
+    toast.add(this.add.text(iconX + 20, 0, `にくきゅう +1　合計 ${total}個`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#ffcc99',
+    }).setOrigin(0, 0.5));
+    this.tweens.add({ targets: toast, y: GAME_HEIGHT / 2 + 58, duration: 200 });
+    this.tweens.add({ targets: toast, alpha: 0, duration: 500, delay: 900, onComplete: () => toast.destroy() });
   }
 
   private showCatchReward(): void {
