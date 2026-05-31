@@ -114,6 +114,8 @@ export interface SwitchAction { type: 'switch'; targetIndex: number }
 export interface NoneAction { type: 'none' }
 export type BattleAction = MoveAction | SwitchAction | NoneAction;
 
+export type WeatherType = 'sunny' | 'storm' | 'fog' | 'rain' | 'dark' | 'sanctuary';
+
 export type BattlePhase = 'selecting' | 'revealing' | 'animating' | 'forcedSwitch' | 'forcedAttack' | 'gameOver';
 
 export type BattleEvent =
@@ -132,4 +134,5 @@ export type BattleEvent =
   | { type: 'shieldBreak'; player: 1 | 2; reflectDamage: number }
   | { type: 'sacrifice'; player: 1 | 2; revived: boolean; allyIdx: number }
   | { type: 'faint'; player: 1 | 2 }
-  | { type: 'gameOver'; winner: 1 | 2 };
+  | { type: 'gameOver'; winner: 1 | 2 }
+  | { type: 'weatherTick'; player: 1 | 2; damage: number };

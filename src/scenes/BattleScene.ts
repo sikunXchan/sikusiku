@@ -7,7 +7,7 @@ import { Effects } from '../fx/Effects';
 import { NetManager } from '../net/NetManager';
 import { addOwnedMonster, loadSave, persistSave, randomIVs } from '../storage/SaveData';
 import type { NetworkMsg } from '../net/messages';
-import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster, StatusEffect, StatusEffectType } from '../data/types';
+import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster, StatusEffect, StatusEffectType, WeatherType } from '../data/types';
 
 // Layout constants
 const PANEL_Y = 388;
@@ -57,6 +57,15 @@ export interface BattleSceneData {
   localPlayer?: 1 | 2;
 }
 
+const WEATHER_INFO: Record<WeatherType, { icon: string; name: string; color: string; desc: string }> = {
+  sunny:    { icon: '☀️',  name: '快晴',  color: '#ffe066', desc: '特になし' },
+  storm:    { icon: '🌩',  name: '嵐',    color: '#aaaaff', desc: '毎ターン全体に最大HP5%ダメ' },
+  fog:      { icon: '🌫',  name: '霧',    color: '#cccccc', desc: '必中技が無効になる' },
+  rain:     { icon: '🌊',  name: '大雨',  color: '#66ccff', desc: 'やけど・毒ダメ半減 / まひ確率2倍' },
+  dark:     { icon: '🌑',  name: '暗闇',  color: '#cc88ff', desc: 'クリティカルが発生しない' },
+  sanctuary:{ icon: '🌸',  name: '聖域',  color: '#ff88cc', desc: '新たな状態異常を付与できない' },
+};
+
 const STATUS_DESCS: Record<string, string> = {
   burn:                '🔥 やけど\n毎ターン 最大HP÷18 ダメ',
   paralyze:            '⚡ まひ\n20%の確率で技が失敗',
@@ -65,10 +74,13 @@ const STATUS_DESCS: Record<string, string> = {
   bind:                '🔒 そくばく\n1ターン 行動・交代不可',
   critBoost:           '✨ 急所の呪い\n必ず急所に当たる',
   atkDebuffOnOpponent: '⬇ こうげき低下\n攻撃力が下がっている',
+  atkDown:             '⬇ ATK低下\n攻撃力が下がっている',
   counterReady:        '🛡 カウンター準備中\n次の攻撃を跳ね返す',
   counterFailed:       '🔗 カウンター失敗\n次のターン行動不可',
   shield:              '🛡 シールド\n50ダメまで吸収。割れると25反射',
   healPercent:         '💚 回復中\n毎ターン最大HP10%回復',
+  damageBoostSelf:     '🥁 与ダメ増\n次の攻撃ダメージが上昇',
+  damageTakenBoostSelf:'⚠ 被ダメ増\n受けるダメージが上昇',
 };
 
 export class BattleScene extends Phaser.Scene {
@@ -171,7 +183,13 @@ export class BattleScene extends Phaser.Scene {
     this.buildSwBtn();
     this.buildTeamDots();
     this.buildStatusIcons();
-    this.showBanner('バトル開始!', '#9be7ff', () => this.startTurn());
+    const startBattle = () => this.showBanner('バトル開始!', '#9be7ff', () => this.startTurn());
+    if (this.engine.weather !== 'sunny') {
+      const wInfo = WEATHER_INFO[this.engine.weather];
+      this.showBanner(`${wInfo.icon} ${wInfo.name}`, wInfo.color, startBattle);
+    } else {
+      startBattle();
+    }
   }
 
   // ── Background ────────────────────────────────────────────────────────
@@ -229,6 +247,7 @@ export class BattleScene extends Phaser.Scene {
     this.syncHpBar(this.engine.p2Active, this.enemyHpUI);
     this.syncHpBar(this.engine.p1Active, this.playerHpUI);
     this.refreshStatusIcons();
+    this.refreshDots();
   }
 
   // ── Sprites ───────────────────────────────────────────────────────────
@@ -266,6 +285,12 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5, 0).setDepth(200);
     this.p1StatusText = this.add.text(28, 14, '', {
       fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#66ff66',
+    }).setDepth(200);
+
+    const wInfo = WEATHER_INFO[this.engine.weather];
+    this.add.text(28, 32, `${wInfo.icon} ${wInfo.name}`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: wInfo.color,
+      fontStyle: 'bold',
     }).setDepth(200);
   }
 
@@ -428,6 +453,18 @@ export class BattleScene extends Phaser.Scene {
       delay: 1000, repeat: 59,
       callback: this.tickTimer, callbackScope: this,
     });
+
+    // Auto-decide immediately when no moves and no switch are available
+    const myMon = this.myActive;
+    const hasMoves = this.engine.availableMoves(myMon).length > 0;
+    const hasSwitch = this.engine.canSwitch(myMon) &&
+                      this.engine.availableSwitchTargets(this.myTeam, this.myActiveIdx).length > 0;
+    if (!hasMoves && !hasSwitch) {
+      this.setLog(`${myMon.monsterDef.name} は動けない!`);
+      this.setMyAction({ type: 'none' });
+      this.disableAllBtns();
+      this.time.delayedCall(400, () => { this.markReady(); this.checkReady(); });
+    }
   }
 
   private tickTimer(): void {
@@ -601,6 +638,7 @@ export class BattleScene extends Phaser.Scene {
       case 'sacrifice':         this.aSacrifice(ev.player, ev.revived, ev.allyIdx, done); break;
       case 'faint':             this.aFaint(ev.player, done); break;
       case 'gameOver':          this.showGameOver(ev.winner); break;
+      case 'weatherTick':       this.aWeatherTick(ev.player, ev.damage, done); break;
       default:                  done();
     }
   }
@@ -793,7 +831,7 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
 
-    this.setLog(`${mon.monsterDef.name} の漆黒のつるぎ! 一撃!`);
+    this.setLog(`${mon.monsterDef.name} の漆黒のつるぎ! HP残り1!`);
     // Dark explosion
     const dark = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0).setDepth(500);
     this.tweens.add({ targets: dark, alpha: 0.95, duration: 280 });
@@ -801,7 +839,7 @@ export class BattleScene extends Phaser.Scene {
       this.fx.hitBurst(defSp.x, defSp.y - 30, 0x440088, true);
       this.fx.shake(0.02, 350);
       this.syncAllHpBars();
-      this.pop(defSp.x, defSp.y - 85, '一撃!!', '#cc44ff', 48);
+      this.pop(defSp.x, defSp.y - 85, 'HP残り1!', '#cc44ff', 42);
       this.tweens.add({ targets: dark, alpha: 0, duration: 600, delay: 400, onComplete: () => dark.destroy() });
       // Self damage flash
       this.tweens.add({ targets: atkSp, alpha: 0.4, duration: 100, yoyo: true, repeat: 2 });
@@ -937,6 +975,13 @@ export class BattleScene extends Phaser.Scene {
     this.time.delayedCall(1400, done);
   }
 
+  private aWeatherTick(player: 1|2, damage: number, done: () => void): void {
+    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    this.pop(sp.x, sp.y - 70, `-${damage}`, '#aaaaff', 18);
+    this.syncAllHpBars();
+    this.time.delayedCall(420, done);
+  }
+
   private aFaint(player: 1|2, done: () => void): void {
     const sp = player === 1 ? this.playerSprite : this.enemySprite;
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
@@ -1015,15 +1060,23 @@ export class BattleScene extends Phaser.Scene {
     this.bonusP2Action = undefined;
 
     if (this.mode === 'quest') {
-      this.bonusP2Action = this.ai.decide(this.engine, 2);
-      if ((this.bonusP2Action as BattleAction).type !== 'move') this.bonusP2Action = { type: 'none' };
+      // Pick any move ignoring cooldowns so AI always attacks in bonus turn
+      const p2Moves = this.engine.p2Active.monsterDef.moveIds;
+      this.bonusP2Action = p2Moves.length > 0
+        ? { type: 'move', moveId: p2Moves[Math.floor(Math.random() * p2Moves.length)] }
+        : { type: 'none' };
     }
 
     const mon = this.myActive;
     this.buildMoveBtns(mon);
     this.setLog(`${mon.monsterDef.name} 登場! 技を選べ!`);
     this.p1StatusText.setText('');
-    this.refreshMoveBtns();
+    // Enable all buttons — bonus turn ignores cooldowns
+    this.moveBtns.forEach(btn => {
+      btn.enabled = true;
+      btn.dimOverlay.setVisible(false);
+      btn.cdLabel.setText('');
+    });
     this.swEnabled = false; this.swDim.setVisible(true);
 
     this.moveBtns.forEach((btn, i) => {
@@ -1031,7 +1084,7 @@ export class BattleScene extends Phaser.Scene {
       btn.container.on('pointerdown', () => {
         if (!btn.enabled || this.phase !== 'forcedAttack') return;
         const moveId = mon.monsterDef.moveIds[i];
-        if (!moveId || !this.engine.isMoveReady(mon, moveId)) return;
+        if (!moveId) return;
         if (this.localPlayer === 1) {
           this.bonusP1Action = { type: 'move', moveId };
         } else {
@@ -1043,15 +1096,19 @@ export class BattleScene extends Phaser.Scene {
     });
 
     this.timerEvent?.remove();
-    this.timerVal = 20;
-    this.timerText.setText('20').setStyle({ color: '#ffe066' });
-    this.timerBar.setFillStyle(0xffe066); this.timerBar.width = GAME_WIDTH * (20 / 60);
+    this.timerVal = 60;
+    this.timerText.setText('60').setStyle({ color: '#ffe066' });
+    this.timerBar.setFillStyle(0xffe066); this.timerBar.width = GAME_WIDTH;
     this.timerEvent = this.time.addEvent({
-      delay: 1000, repeat: 19,
+      delay: 1000, repeat: 59,
       callback: () => {
         this.timerVal--;
         this.timerText.setText(`${this.timerVal}`);
         this.timerBar.width = GAME_WIDTH * (this.timerVal / 60);
+        if (this.timerVal <= 10) {
+          this.timerText.setStyle({ color: '#ff4444' });
+          this.timerBar.setFillStyle(0xff4444);
+        }
         if (this.timerVal <= 0 && this.phase === 'forcedAttack') {
           this.timerEvent?.remove();
           this.disableAllBtns();
@@ -1064,6 +1121,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private execBonusTurn(): void {
+    this.timerEvent?.remove();
     const p1A = this.bonusP1Action ?? { type: 'none' };
     const p2A = this.bonusP2Action ?? { type: 'none' };
     this.phase = 'animating';
@@ -1247,7 +1305,8 @@ export class BattleScene extends Phaser.Scene {
         btn.cdLabel.setText('');
       }
     });
-    const canSw = this.engine.availableSwitchTargets(this.myTeam, this.myActiveIdx).length > 0;
+    const canSw = this.engine.canSwitch(this.myActive) &&
+                  this.engine.availableSwitchTargets(this.myTeam, this.myActiveIdx).length > 0;
     this.swEnabled = canSw; this.swDim.setVisible(!canSw);
   }
 
@@ -1321,7 +1380,7 @@ export class BattleScene extends Phaser.Scene {
       baseX: number, baseY: number,
       list: Phaser.GameObjects.Text[], typeList: string[],
     ) => {
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 7; i++) {
         typeList.push('');
         const ic = this.add.text(baseX + i * 30, baseY, '', {
           fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffffff',
@@ -1366,8 +1425,10 @@ export class BattleScene extends Phaser.Scene {
   private refreshStatusIcons(): void {
     const icons: Record<string, string> = {
       burn: '🔥', paralyze: '⚡', poison: '☠', confuse: '😵', bind: '🔒',
-      critBoost: '✨', atkDebuffOnOpponent: '⬇', counterReady: '🛡', counterFailed: '🔗',
+      critBoost: '✨', atkDebuffOnOpponent: '⬇', atkDown: '⬇',
+      counterReady: '🛡', counterFailed: '🔗',
       shield: '🔵', healPercent: '💚',
+      damageBoostSelf: '🥁', damageTakenBoostSelf: '⚠',
     };
     const fillIcons = (
       team: BattleMonster[], list: Phaser.GameObjects.Text[], typeList: string[],

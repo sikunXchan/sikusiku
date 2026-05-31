@@ -21,6 +21,10 @@ const TEAM_SIZE = 3;
 export class TeamSelectScene extends Phaser.Scene {
   private selectedIndices: number[] = [];
   private cards: Phaser.GameObjects.Container[] = [];
+  private cardContainer!: Phaser.GameObjects.Container;
+  private scrollOffsetY = 0;
+  private maxScrollOffsetY = 0;
+  private isDragging = false;
   private startBtn!: Phaser.GameObjects.Container;
   private sceneData!: TeamSelectData;
 
@@ -32,6 +36,8 @@ export class TeamSelectScene extends Phaser.Scene {
     this.sceneData = data;
     this.selectedIndices = [];
     this.cards = [];
+    this.scrollOffsetY = 0;
+    this.isDragging = false;
   }
 
   create(): void {
@@ -44,7 +50,9 @@ export class TeamSelectScene extends Phaser.Scene {
 
   private buildBackground(): void {
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x1a1530);
-    this.add.rectangle(GAME_WIDTH / 2, 35, GAME_WIDTH, 70, 0x0f0c1e);
+    this.add.rectangle(GAME_WIDTH / 2, 35, GAME_WIDTH, 70, 0x0f0c1e).setDepth(3);
+    // Solid overlay to clip cards that scroll into the footer area
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT - 55, GAME_WIDTH, 110, 0x1a1530).setDepth(3);
   }
 
   private buildHeader(): void {
@@ -60,13 +68,13 @@ export class TeamSelectScene extends Phaser.Scene {
       fontSize: '22px',
       color: '#ffffff',
       fontStyle: 'bold',
-    }).setOrigin(0.5, 0);
+    }).setOrigin(0.5, 0).setDepth(4);
 
     this.add.text(GAME_WIDTH / 2, 50, `${TEAM_SIZE}体選んでください (順番が先鋒になります)`, {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '14px',
       color: '#aaaaaa',
-    }).setOrigin(0.5, 0);
+    }).setOrigin(0.5, 0).setDepth(4);
   }
 
   private buildMonsterCards(): void {
@@ -77,6 +85,8 @@ export class TeamSelectScene extends Phaser.Scene {
     const totalW = perRow * (cardW + 15);
     const startX = (GAME_WIDTH - totalW) / 2 + cardW / 2;
     const startY = 230;
+
+    this.cardContainer = this.add.container(0, 0);
 
     for (let i = 0; i < monsters.length; i++) {
       const owned = monsters[i];
@@ -176,6 +186,7 @@ export class TeamSelectScene extends Phaser.Scene {
         ivShowing = v;
         statsText.setVisible(!v);
         ivElems.forEach(el => el.setVisible(v));
+        container.setDepth(v ? 5 : 0); // bring to front of cardContainer when IV visible
       };
 
       container.on('pointerover', () => {
@@ -198,6 +209,7 @@ export class TeamSelectScene extends Phaser.Scene {
       });
       container.on('pointerup', () => {
         holdTimer?.remove(); holdTimer = undefined;
+        if (this.isDragging) { this.isDragging = false; return; }
         if (ivShowing) {
           showIv(false);
         } else if (!longPressed) {
@@ -206,8 +218,42 @@ export class TeamSelectScene extends Phaser.Scene {
         longPressed = false;
       });
 
+      this.cardContainer.add(container); // removes from scene, adds to scroll container
       this.cards.push(container);
     }
+
+    // Calculate how far we need to scroll to see all rows
+    const numRows = Math.ceil(monsters.length / 4);
+    const contentBottom = startY + (numRows - 1) * (cardH + 15) + cardH / 2 + 30;
+    this.maxScrollOffsetY = Math.max(0, contentBottom - (GAME_HEIGHT - 120));
+
+    if (this.maxScrollOffsetY > 0) {
+      // Mouse wheel scroll
+      this.input.on('wheel', (_p: unknown, _g: unknown, _dx: number, dy: number) => {
+        this.applyScroll(dy > 0 ? 80 : -80);
+      });
+
+      // Touch / pointer drag scroll
+      let dragY0 = 0;
+      this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+        dragY0 = p.y;
+        this.isDragging = false;
+      });
+      this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+        if (!p.isDown) return;
+        const diff = dragY0 - p.y;
+        if (Math.abs(diff) > 8) {
+          this.isDragging = true;
+          this.applyScroll(diff);
+          dragY0 = p.y;
+        }
+      });
+    }
+  }
+
+  private applyScroll(delta: number): void {
+    this.scrollOffsetY = Phaser.Math.Clamp(this.scrollOffsetY + delta, 0, this.maxScrollOffsetY);
+    this.cardContainer.y = -this.scrollOffsetY;
   }
 
   private toggleSelect(idx: number, container: Phaser.GameObjects.Container): void {
@@ -283,6 +329,7 @@ export class TeamSelectScene extends Phaser.Scene {
     (c as any).label = label;
     (c as any).dimOverlay = dimOverlay;
     this.startBtn = c;
+    c.setDepth(5);
   }
 
   private buildSelectedIndicator(): void {
@@ -290,7 +337,7 @@ export class TeamSelectScene extends Phaser.Scene {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '16px',
       color: '#aaaaaa',
-    }).setOrigin(0.5).setName('selectCount');
+    }).setOrigin(0.5).setDepth(5).setName('selectCount');
   }
 
   private updateStartButton(): void {

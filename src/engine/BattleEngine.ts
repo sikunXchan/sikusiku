@@ -8,7 +8,10 @@ import type {
   OwnedMonster,
   StatusEffect,
   StatusEffectType,
+  WeatherType,
 } from '../data/types';
+
+const WEATHERS: WeatherType[] = ['sunny', 'sunny', 'storm', 'fog', 'rain', 'dark', 'sanctuary'];
 
 export const CRIT_RATE = 0.1;
 export const CRIT_MULT = 1.5;
@@ -36,10 +39,12 @@ export class BattleEngine {
   public p1ActiveIdx = 0;
   public p2ActiveIdx = 0;
   public turn = 1;
+  public weather: WeatherType;
 
   constructor(p1Team: BattleMonster[], p2Team: BattleMonster[]) {
     this.p1Team = p1Team;
     this.p2Team = p2Team;
+    this.weather = WEATHERS[Math.floor(Math.random() * WEATHERS.length)];
   }
 
   get p1Active(): BattleMonster { return this.p1Team[this.p1ActiveIdx]; }
@@ -52,6 +57,15 @@ export class BattleEngine {
 
   canSwitch(monster: BattleMonster): boolean {
     return !this.hasStatus(monster, 'bind') && !this.hasStatus(monster, 'counterFailed');
+  }
+
+  private clearSwitchStatus(monster: BattleMonster): void {
+    const toClear = new Set<StatusEffectType>([
+      'burn', 'paralyze', 'poison', 'confuse', 'bind',
+      'atkDown', 'damageTakenBoostSelf', 'damageBoostSelf',
+      'counterFailed', 'atkDebuffOnOpponent',
+    ]);
+    monster.statusEffects = monster.statusEffects.filter(se => !toClear.has(se.type));
   }
 
   availableMoves(monster: BattleMonster): string[] {
@@ -76,11 +90,13 @@ export class BattleEngine {
     // Switches first
     if (p1Action.type === 'switch' && this.canSwitch(this.p1Active)) {
       const from = this.p1ActiveIdx;
+      this.clearSwitchStatus(this.p1Team[from]);
       this.p1ActiveIdx = p1Action.targetIndex;
       events.push({ type: 'switch', player: 1, fromIdx: from, toIdx: p1Action.targetIndex });
     }
     if (p2Action.type === 'switch' && this.canSwitch(this.p2Active)) {
       const from = this.p2ActiveIdx;
+      this.clearSwitchStatus(this.p2Team[from]);
       this.p2ActiveIdx = p2Action.targetIndex;
       events.push({ type: 'switch', player: 2, fromIdx: from, toIdx: p2Action.targetIndex });
     }
@@ -161,6 +177,19 @@ export class BattleEngine {
     this.tickStatusDamage(p1, events, 1);
     this.tickStatusDamage(p2, events, 2);
 
+    // Storm weather: 5% max HP damage to both active monsters
+    if (this.weather === 'storm') {
+      const stormTargets: [BattleMonster, 1|2][] = [[p1, 1], [p2, 2]];
+      for (const [mon, player] of stormTargets) {
+        if (!mon.fainted) {
+          const dmg = Math.max(1, Math.floor(mon.maxHp * 0.05));
+          mon.currentHp = Math.max(0, mon.currentHp - dmg);
+          if (mon.currentHp <= 0) mon.fainted = true;
+          events.push({ type: 'weatherTick', player, damage: dmg });
+        }
+      }
+    }
+
     // Tick durations
     this.tickStatusEffects(p1);
     this.tickStatusEffects(p2);
@@ -225,6 +254,10 @@ export class BattleEngine {
     if (p2Attacking && p2Action.type === 'move') {
       this.processMoveEffects(p2, p1, p2AtkSnap, p2Action.moveId, events, 2, p1Attacking);
     }
+
+    // Clear this-turn dodge flags
+    p1.dodgingThisTurn = false;
+    p2.dodgingThisTurn = false;
 
     if (p1.fainted) events.push({ type: 'faint', player: 1 });
     if (p2.fainted) events.push({ type: 'faint', player: 2 });
@@ -313,8 +346,8 @@ export class BattleEngine {
     const move = getMove(moveId);
     attacker.moveCooldowns[moveId] = this.turn + move.cooldownTurns;
 
-    // Paralysis check: 20% chance move fails
-    if (this.hasStatus(attacker, 'paralyze') && Math.random() < 0.2) {
+    // Paralysis check: 20% chance move fails (40% in rain)
+    if (this.hasStatus(attacker, 'paralyze') && Math.random() < (this.weather === 'rain' ? 0.4 : 0.2)) {
       events.push({ type: 'statusTick', player, statusType: 'paralyze', damage: 0 });
       return;
     }
@@ -338,8 +371,10 @@ export class BattleEngine {
           attacker.statusEffects.push({ type: 'damageTakenBoostSelf', multiplier: effect.value, turnsLeft: -1, delay: 0 });
           break;
         case 'atkDown':
-          defender.statusEffects.push({ type: 'atkDown', multiplier: effect.value, turnsLeft: 3, delay: 1 });
-          events.push({ type: 'atkDebuff', player, target: player === 1 ? 2 : 1 });
+          if (this.weather !== 'sanctuary') {
+            defender.statusEffects.push({ type: 'atkDown', multiplier: effect.value, turnsLeft: 3, delay: 1 });
+            events.push({ type: 'atkDebuff', player, target: player === 1 ? 2 : 1 });
+          }
           break;
         case 'reduceCooldowns':
           for (const id of Object.keys(attacker.moveCooldowns)) {
@@ -349,7 +384,7 @@ export class BattleEngine {
           break;
         case 'conditionalDamage':
           if (!opponentAttacked) {
-            const dodged = defender.dodgingThisTurn && !move.guaranteed;
+            const dodged = defender.dodgingThisTurn && !(move.guaranteed && this.weather !== 'fog');
             if (!dodged) {
               const dmg = this.applyDamage(attacker, defender, effect.value, atkSnap, false, events, player);
               events.push({ type: 'conditionalDamage', player, damage: dmg, dodged: false });
@@ -359,31 +394,31 @@ export class BattleEngine {
           }
           break;
         case 'applyParalyze':
-          if (!this.hasStatus(defender, 'paralyze')) {
+          if (this.weather !== 'sanctuary' && !this.hasStatus(defender, 'paralyze')) {
             defender.statusEffects.push({ type: 'paralyze', turnsLeft: effect.value, delay: 0 });
             events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'paralyze' });
           }
           break;
         case 'applyBurn':
-          if (!this.hasStatus(defender, 'burn')) {
+          if (this.weather !== 'sanctuary' && !this.hasStatus(defender, 'burn')) {
             defender.statusEffects.push({ type: 'burn', turnsLeft: effect.value || 2, delay: 0 });
             events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'burn' });
           }
           break;
         case 'applyPoison':
-          if (!this.hasStatus(defender, 'poison')) {
+          if (this.weather !== 'sanctuary' && !this.hasStatus(defender, 'poison')) {
             defender.statusEffects.push({ type: 'poison', turnsLeft: effect.value || 2, delay: 0 });
             events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'poison' });
           }
           break;
         case 'applyConfuse':
-          if (!this.hasStatus(defender, 'confuse')) {
+          if (this.weather !== 'sanctuary' && !this.hasStatus(defender, 'confuse')) {
             defender.statusEffects.push({ type: 'confuse', turnsLeft: effect.value || 2, delay: 0 });
             events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'confuse' });
           }
           break;
         case 'applyBind':
-          if (!this.hasStatus(defender, 'bind')) {
+          if (this.weather !== 'sanctuary' && !this.hasStatus(defender, 'bind')) {
             defender.statusEffects.push({ type: 'bind', turnsLeft: 1, delay: 0 });
             events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'bind' });
           }
@@ -393,9 +428,10 @@ export class BattleEngine {
           events.push({ type: 'buff', player, moveId, description: `${effect.value}ターン間、必ず急所!` });
           break;
         case 'applyAtkDebuff':
-          // Persistent ATK debuff on opponent (最悪な呪い: -10% for N turns)
-          defender.statusEffects.push({ type: 'atkDebuffOnOpponent', multiplier: 0.9, turnsLeft: effect.value, delay: 0 });
-          events.push({ type: 'buff', player, moveId, description: `${effect.value}ターン間、相手ATK-10%` });
+          if (this.weather !== 'sanctuary') {
+            defender.statusEffects.push({ type: 'atkDebuffOnOpponent', multiplier: 0.9, turnsLeft: effect.value, delay: 0 });
+            events.push({ type: 'buff', player, moveId, description: `${effect.value}ターン間、相手ATK-10%` });
+          }
           break;
         case 'applyHealPercent':
           // Heal self X% max HP per turn for 2 turns
@@ -439,9 +475,8 @@ export class BattleEngine {
             attacker.fainted = true;
             events.push({ type: 'ohko', player, succeeded: false });
           } else {
-            // Opponent HP to 0, self takes 100 damage
-            defender.currentHp = 0;
-            defender.fainted = true;
+            // Opponent HP drops to 1 (no KO), self takes 100 damage
+            defender.currentHp = 1;
             const selfDmg = Math.min(effect.value, attacker.currentHp - 1);
             attacker.currentHp = Math.max(1, attacker.currentHp - selfDmg);
             events.push({ type: 'ohko', player, succeeded: true });
@@ -454,7 +489,7 @@ export class BattleEngine {
     }
 
     if (move.baseDamage > 0) {
-      const dodged = defender.dodgingThisTurn && !move.guaranteed;
+      const dodged = defender.dodgingThisTurn && !(move.guaranteed && this.weather !== 'fog');
       const countered = !dodged && this.hasStatus(defender, 'counterReady');
       if (dodged) {
         events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: true });
@@ -462,8 +497,8 @@ export class BattleEngine {
         // Damage will be resolved in resolveCounter
         events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: false });
       } else {
-        const forceCrit = this.hasStatus(attacker, 'critBoost');
-        const critical = forceCrit || Math.random() < CRIT_RATE;
+        const forceCrit = this.weather !== 'dark' && this.hasStatus(attacker, 'critBoost');
+        const critical = this.weather !== 'dark' && (forceCrit || Math.random() < CRIT_RATE);
         const raw = this.calcDamage(attacker, defender, atkSnap, move.baseDamage, critical);
         const actual = this.applyDamage(attacker, defender, raw, atkSnap, critical, events, player);
         events.push({ type: 'attack', player, moveId, damage: actual, critical, dodged: false });
@@ -544,12 +579,12 @@ export class BattleEngine {
     for (const se of monster.statusEffects) {
       if (se.delay > 0) continue;
       if (se.type === 'burn') {
-        const dmg = Math.max(1, Math.floor(monster.maxHp / 18));
+        const dmg = Math.max(1, Math.floor(monster.maxHp / (this.weather === 'rain' ? 36 : 18)));
         monster.currentHp = Math.max(0, monster.currentHp - dmg);
         if (monster.currentHp <= 0) monster.fainted = true;
         events.push({ type: 'statusTick', player, statusType: 'burn', damage: dmg });
       } else if (se.type === 'poison') {
-        const dmg = Math.max(1, Math.floor(monster.currentHp / 8));
+        const dmg = Math.max(1, Math.floor(monster.currentHp / (this.weather === 'rain' ? 16 : 8)));
         monster.currentHp = Math.max(0, monster.currentHp - dmg);
         if (monster.currentHp <= 0) monster.fainted = true;
         events.push({ type: 'statusTick', player, statusType: 'poison', damage: dmg });

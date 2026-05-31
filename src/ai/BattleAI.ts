@@ -11,9 +11,11 @@ export class BattleAI {
     const moves = engine.availableMoves(monster);
 
     if (moves.length === 0) {
-      const switches = engine.availableSwitchTargets(team, activeIdx);
-      if (switches.length > 0) {
-        return { type: 'switch', targetIndex: switches[0] };
+      if (engine.canSwitch(monster)) {
+        const switches = engine.availableSwitchTargets(team, activeIdx);
+        if (switches.length > 0) {
+          return { type: 'switch', targetIndex: switches[0] };
+        }
       }
       return { type: 'none' };
     }
