@@ -212,7 +212,7 @@ export const MOVES: Record<string, MoveDef> = {
     guaranteed: true,
     effects: [{ type: 'applyBind', value: 1 }],
     color: 0x44ccff,
-    description: '必中20ダメ + 相手をそくばく (3ターン毎)',
+    description: '必中20ダメ + 相手をそくばく・交代不可 (3ターン毎)',
     category: 'physical',
   },
   haki: {

@@ -22,10 +22,10 @@ export const TYPE_COLORS: Record<MonsterType, number> = {
 export function typeEffectiveness(atkType: MonsterType, defType: MonsterType): number {
   if (atkType === 'normal') return 1;
   const chart: Partial<Record<MonsterType, Partial<Record<MonsterType, number>>>> = {
-    fight:  { dark: 2.0, nature: 0.5, mystic: 0.5 },
-    nature: { fight: 2.0, dark: 0.5 },
-    dark:   { nature: 2.0, fight: 0.5 },
-    mystic: { fight: 2.0 },
+    fight:  { dark: 1.2, nature: 0.8, mystic: 0.8 },
+    nature: { fight: 1.2, dark: 0.8 },
+    dark:   { nature: 1.2, fight: 0.8 },
+    mystic: { fight: 1.2 },
   };
   return chart[atkType]?.[defType] ?? 1;
 }

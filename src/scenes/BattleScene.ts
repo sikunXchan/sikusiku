@@ -73,7 +73,7 @@ const STATUS_DESCS: Record<string, string> = {
   paralyze:            '⚡ まひ\n20%の確率で技が失敗',
   poison:              '☠ どく\n毎ターン 現在HP÷8 ダメ',
   confuse:             '😵 こんらん\n15%の確率で技失敗\n失敗時は自傷ダメあり',
-  bind:                '🔒 そくばく\n1ターン 行動・交代不可',
+  bind:                '🔒 そくばく\n1ターン 交代不可',
   critBoost:           '✨ 急所の呪い\n必ず急所に当たる',
   atkDebuffOnOpponent: '⬇ こうげき低下\n攻撃力が下がっている',
   atkDown:             '⬇ ATK低下\n攻撃力が下がっている',
@@ -765,8 +765,8 @@ export class BattleScene extends Phaser.Scene {
         this.pop(defSp.x, defSp.y - 85, critical ? `${damage}!` : `${damage}`,
           critical ? '#ff4444' : '#ffffff', critical ? 46 : 30);
         if (critical) this.pop(defSp.x, defSp.y - 125, 'CRITICAL!', '#ffe066', 18);
-        if (effectiveness >= 2.0) this.pop(defSp.x, defSp.y - 148, '効果抜群！', '#ffee44', 16);
-        else if (effectiveness <= 0.5) this.pop(defSp.x, defSp.y - 148, '効果がいまいち…', '#888888', 14);
+        if (effectiveness > 1.0) this.pop(defSp.x, defSp.y - 148, '効果抜群！', '#ffee44', 16);
+        else if (effectiveness < 1.0) this.pop(defSp.x, defSp.y - 148, '効果がいまいち…', '#888888', 14);
         if (moveId === 'shikken') this.pop(atkSp.x, atkSp.y - 75, '防御低下!', '#ffaa55', 15);
         this.syncAllHpBars();
         const kdir = player === 1 ? 1 : -1;

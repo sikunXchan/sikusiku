@@ -52,7 +52,7 @@ export class BattleEngine {
   get p2Active(): BattleMonster { return this.p2Team[this.p2ActiveIdx]; }
 
   isMoveReady(monster: BattleMonster, moveId: string): boolean {
-    if (this.hasStatus(monster, 'bind') || this.hasStatus(monster, 'counterFailed')) return false;
+    if (this.hasStatus(monster, 'counterFailed')) return false;
     return (monster.moveCooldowns[moveId] ?? 0) <= this.turn;
   }
 
