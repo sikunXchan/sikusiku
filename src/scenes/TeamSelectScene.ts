@@ -272,6 +272,9 @@ export class TeamSelectScene extends Phaser.Scene {
       dimOverlay.setVisible(false);
       this.updateAllOrderLabels();
     } else if (this.selectedIndices.length < TEAM_SIZE) {
+      // Prevent duplicate character
+      const newDefId = this.sceneData.save.ownedMonsters[idx].defId;
+      if (this.selectedIndices.some(si => this.sceneData.save.ownedMonsters[si].defId === newDefId)) return;
       // Select
       this.selectedIndices.push(idx);
       (container as any).selected = true;

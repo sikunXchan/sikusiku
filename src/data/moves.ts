@@ -119,16 +119,16 @@ export const MOVES: Record<string, MoveDef> = {
     category: 'special',
   },
   // ── 闇の王 moves ──────────────────────────────────────────────────────
-  counter: {
-    id: 'counter',
-    name: 'カウンター',
-    cooldownTurns: 3,
+  yamiNoTsurugi: {
+    id: 'yamiNoTsurugi',
+    name: '闇のつるぎ',
+    cooldownTurns: 2,
     baseDamage: 0,
     guaranteed: false,
-    effects: [{ type: 'counter', value: 1 }],
-    color: 0xff4400,
-    description: '相手のダメージを反射。不発なら次のターン行動不能 (3ターン毎)',
-    category: 'counter',
+    effects: [{ type: 'maxHpDamage', value: 10 }],
+    color: 0x440066,
+    description: '相手の最大HP10%のダメージを与える (2ターン毎)',
+    category: 'special',
   },
   shikkokunoTsurugi: {
     id: 'shikkokunoTsurugi',

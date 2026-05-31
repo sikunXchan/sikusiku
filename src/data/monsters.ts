@@ -43,7 +43,7 @@ export const MONSTERS: Record<string, MonsterDef> = {
     frontSprite: 'darkking_front',
     backSprite: 'darkking_back',
     baseStats: { hp: 210, atk: 130, def: 70 },
-    moveIds: ['counter', 'shikkokunoTsurugi', 'kawasu2'],
+    moveIds: ['yamiNoTsurugi', 'shikkokunoTsurugi', 'kawasu2'],
     catchRate: 15,
   },
   roncha: {

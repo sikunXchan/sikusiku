@@ -54,7 +54,8 @@ export type MoveEffectType =
   | 'applyExplosion'
   | 'applyShield'
   | 'applyHealPercent'
-  | 'sacrificeRevive';
+  | 'sacrificeRevive'
+  | 'maxHpDamage';
 
 export interface MoveEffect {
   type: MoveEffectType;
