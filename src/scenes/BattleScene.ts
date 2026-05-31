@@ -1110,11 +1110,7 @@ export class BattleScene extends Phaser.Scene {
     this.bonusP2Action = undefined;
 
     if (this.mode === 'quest') {
-      // Pick any move ignoring cooldowns so AI always attacks in bonus turn
-      const p2Moves = this.engine.p2Active.monsterDef.moveIds;
-      this.bonusP2Action = p2Moves.length > 0
-        ? { type: 'move', moveId: p2Moves[Math.floor(Math.random() * p2Moves.length)] }
-        : { type: 'none' };
+      this.bonusP2Action = this.pickBonusMove(this.engine.p2Active.monsterDef.moveIds);
     }
 
     const mon = this.myActive;
@@ -1170,13 +1166,26 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
+  private pickBonusMove(moveIds: string[]): BattleAction {
+    // Prefer damaging moves so the bonus attack is visible
+    const attacking = moveIds.filter(id => {
+      const m = getMove(id);
+      return m.baseDamage > 0 || m.effects.some(e =>
+        e.type === 'maxHpDamage' || e.type === 'ohko' || e.type === 'conditionalDamage');
+    });
+    const nonDodge = moveIds.filter(id => !getMove(id).effects.some(e => e.type === 'dodge'));
+    const pool = attacking.length > 0 ? attacking : nonDodge.length > 0 ? nonDodge : moveIds;
+    return pool.length > 0
+      ? { type: 'move', moveId: pool[Math.floor(Math.random() * pool.length)] }
+      : { type: 'none' };
+  }
+
   private execBonusTurn(): void {
     this.timerEvent?.remove();
     const p1A = this.bonusP1Action ?? { type: 'none' };
     let p2A = this.bonusP2Action ?? { type: 'none' };
     if (this.mode === 'quest' && p2A.type !== 'move') {
-      const moves = this.engine.p2Active.monsterDef.moveIds;
-      p2A = moves.length > 0 ? { type: 'move', moveId: moves[Math.floor(Math.random() * moves.length)] } : { type: 'none' };
+      p2A = this.pickBonusMove(this.engine.p2Active.monsterDef.moveIds);
     }
     this.phase = 'animating';
     this.eventQueue = this.engine.resolveBonusTurn(
