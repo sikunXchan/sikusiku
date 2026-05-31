@@ -454,9 +454,8 @@ export class BattleEngine {
             attacker.fainted = true;
             events.push({ type: 'ohko', player, succeeded: false });
           } else {
-            // Opponent HP to 0, self takes 100 damage
-            defender.currentHp = 0;
-            defender.fainted = true;
+            // Opponent HP drops to 1 (no KO), self takes 100 damage
+            defender.currentHp = 1;
             const selfDmg = Math.min(effect.value, attacker.currentHp - 1);
             attacker.currentHp = Math.max(1, attacker.currentHp - selfDmg);
             events.push({ type: 'ohko', player, succeeded: true });

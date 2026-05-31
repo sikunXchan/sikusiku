@@ -232,6 +232,7 @@ export class BattleScene extends Phaser.Scene {
     this.syncHpBar(this.engine.p2Active, this.enemyHpUI);
     this.syncHpBar(this.engine.p1Active, this.playerHpUI);
     this.refreshStatusIcons();
+    this.refreshDots();
   }
 
   // ── Sprites ───────────────────────────────────────────────────────────
@@ -431,6 +432,18 @@ export class BattleScene extends Phaser.Scene {
       delay: 1000, repeat: 59,
       callback: this.tickTimer, callbackScope: this,
     });
+
+    // Auto-decide immediately when no moves and no switch are available
+    const myMon = this.myActive;
+    const hasMoves = this.engine.availableMoves(myMon).length > 0;
+    const hasSwitch = this.engine.canSwitch(myMon) &&
+                      this.engine.availableSwitchTargets(this.myTeam, this.myActiveIdx).length > 0;
+    if (!hasMoves && !hasSwitch) {
+      this.setLog(`${myMon.monsterDef.name} は動けない!`);
+      this.setMyAction({ type: 'none' });
+      this.disableAllBtns();
+      this.time.delayedCall(400, () => { this.markReady(); this.checkReady(); });
+    }
   }
 
   private tickTimer(): void {
@@ -796,7 +809,7 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
 
-    this.setLog(`${mon.monsterDef.name} の漆黒のつるぎ! 一撃!`);
+    this.setLog(`${mon.monsterDef.name} の漆黒のつるぎ! HP残り1!`);
     // Dark explosion
     const dark = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0).setDepth(500);
     this.tweens.add({ targets: dark, alpha: 0.95, duration: 280 });
@@ -804,7 +817,7 @@ export class BattleScene extends Phaser.Scene {
       this.fx.hitBurst(defSp.x, defSp.y - 30, 0x440088, true);
       this.fx.shake(0.02, 350);
       this.syncAllHpBars();
-      this.pop(defSp.x, defSp.y - 85, '一撃!!', '#cc44ff', 48);
+      this.pop(defSp.x, defSp.y - 85, 'HP残り1!', '#cc44ff', 42);
       this.tweens.add({ targets: dark, alpha: 0, duration: 600, delay: 400, onComplete: () => dark.destroy() });
       // Self damage flash
       this.tweens.add({ targets: atkSp, alpha: 0.4, duration: 100, yoyo: true, repeat: 2 });
@@ -1018,15 +1031,23 @@ export class BattleScene extends Phaser.Scene {
     this.bonusP2Action = undefined;
 
     if (this.mode === 'quest') {
-      this.bonusP2Action = this.ai.decide(this.engine, 2);
-      if ((this.bonusP2Action as BattleAction).type !== 'move') this.bonusP2Action = { type: 'none' };
+      // Pick any move ignoring cooldowns so AI always attacks in bonus turn
+      const p2Moves = this.engine.p2Active.monsterDef.moveIds;
+      this.bonusP2Action = p2Moves.length > 0
+        ? { type: 'move', moveId: p2Moves[Math.floor(Math.random() * p2Moves.length)] }
+        : { type: 'none' };
     }
 
     const mon = this.myActive;
     this.buildMoveBtns(mon);
     this.setLog(`${mon.monsterDef.name} 登場! 技を選べ!`);
     this.p1StatusText.setText('');
-    this.refreshMoveBtns();
+    // Enable all buttons — bonus turn ignores cooldowns
+    this.moveBtns.forEach(btn => {
+      btn.enabled = true;
+      btn.dimOverlay.setVisible(false);
+      btn.cdLabel.setText('');
+    });
     this.swEnabled = false; this.swDim.setVisible(true);
 
     this.moveBtns.forEach((btn, i) => {
@@ -1034,7 +1055,7 @@ export class BattleScene extends Phaser.Scene {
       btn.container.on('pointerdown', () => {
         if (!btn.enabled || this.phase !== 'forcedAttack') return;
         const moveId = mon.monsterDef.moveIds[i];
-        if (!moveId || !this.engine.isMoveReady(mon, moveId)) return;
+        if (!moveId) return;
         if (this.localPlayer === 1) {
           this.bonusP1Action = { type: 'move', moveId };
         } else {
@@ -1046,15 +1067,19 @@ export class BattleScene extends Phaser.Scene {
     });
 
     this.timerEvent?.remove();
-    this.timerVal = 20;
-    this.timerText.setText('20').setStyle({ color: '#ffe066' });
-    this.timerBar.setFillStyle(0xffe066); this.timerBar.width = GAME_WIDTH * (20 / 60);
+    this.timerVal = 60;
+    this.timerText.setText('60').setStyle({ color: '#ffe066' });
+    this.timerBar.setFillStyle(0xffe066); this.timerBar.width = GAME_WIDTH;
     this.timerEvent = this.time.addEvent({
-      delay: 1000, repeat: 19,
+      delay: 1000, repeat: 59,
       callback: () => {
         this.timerVal--;
         this.timerText.setText(`${this.timerVal}`);
         this.timerBar.width = GAME_WIDTH * (this.timerVal / 60);
+        if (this.timerVal <= 10) {
+          this.timerText.setStyle({ color: '#ff4444' });
+          this.timerBar.setFillStyle(0xff4444);
+        }
         if (this.timerVal <= 0 && this.phase === 'forcedAttack') {
           this.timerEvent?.remove();
           this.disableAllBtns();
@@ -1067,6 +1092,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private execBonusTurn(): void {
+    this.timerEvent?.remove();
     const p1A = this.bonusP1Action ?? { type: 'none' };
     const p2A = this.bonusP2Action ?? { type: 'none' };
     this.phase = 'animating';
@@ -1250,7 +1276,8 @@ export class BattleScene extends Phaser.Scene {
         btn.cdLabel.setText('');
       }
     });
-    const canSw = this.engine.availableSwitchTargets(this.myTeam, this.myActiveIdx).length > 0;
+    const canSw = this.engine.canSwitch(this.myActive) &&
+                  this.engine.availableSwitchTargets(this.myTeam, this.myActiveIdx).length > 0;
     this.swEnabled = canSw; this.swDim.setVisible(!canSw);
   }
 

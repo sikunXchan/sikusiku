@@ -138,7 +138,7 @@ export const MOVES: Record<string, MoveDef> = {
     guaranteed: false,
     effects: [{ type: 'ohko', value: 100 }],  // value = self HP cost on success
     color: 0x220044,
-    description: '相手HPを0にする。無効化されたら自分が倒れる。成功で自HP-100 (1回限り)',
+    description: '相手HPを残り1にする。無効化されたら自分が倒れる。成功で自HP-100 (1回限り)',
     category: 'special',
   },
   kawasu2: {
@@ -181,9 +181,9 @@ export const MOVES: Record<string, MoveDef> = {
     cooldownTurns: 2,
     baseDamage: 0,
     guaranteed: false,
-    effects: [{ type: 'applyConfuse', value: 1 }],
+    effects: [{ type: 'applyConfuse', value: 2 }],
     color: 0xff55ff,
-    description: '相手を1ターンこんらん状態にする (2ターン毎)',
+    description: '相手を2ターンこんらん状態にする (2ターン毎)',
     category: 'curse',
   },
   // ── 闇堕ちしくん moves ────────────────────────────────────────────────
