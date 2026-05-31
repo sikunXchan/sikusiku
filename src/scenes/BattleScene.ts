@@ -7,7 +7,7 @@ import { Effects } from '../fx/Effects';
 import { NetManager } from '../net/NetManager';
 import { addOwnedMonster, loadSave, persistSave, randomIVs } from '../storage/SaveData';
 import type { NetworkMsg } from '../net/messages';
-import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster, StatusEffect, StatusEffectType } from '../data/types';
+import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster, StatusEffect, StatusEffectType, WeatherType } from '../data/types';
 
 // Layout constants
 const PANEL_Y = 388;
@@ -56,6 +56,15 @@ export interface BattleSceneData {
   p2Team: OwnedMonster[];
   localPlayer?: 1 | 2;
 }
+
+const WEATHER_INFO: Record<WeatherType, { icon: string; name: string; color: string; desc: string }> = {
+  sunny:    { icon: '☀️',  name: '快晴',  color: '#ffe066', desc: '特になし' },
+  storm:    { icon: '🌩',  name: '嵐',    color: '#aaaaff', desc: '毎ターン全体に最大HP5%ダメ' },
+  fog:      { icon: '🌫',  name: '霧',    color: '#cccccc', desc: '必中技が無効になる' },
+  rain:     { icon: '🌊',  name: '大雨',  color: '#66ccff', desc: 'やけど・毒ダメ半減 / まひ確率2倍' },
+  dark:     { icon: '🌑',  name: '暗闇',  color: '#cc88ff', desc: 'クリティカルが発生しない' },
+  sanctuary:{ icon: '🌸',  name: '聖域',  color: '#ff88cc', desc: '新たな状態異常を付与できない' },
+};
 
 const STATUS_DESCS: Record<string, string> = {
   burn:                '🔥 やけど\n毎ターン 最大HP÷18 ダメ',
@@ -174,7 +183,13 @@ export class BattleScene extends Phaser.Scene {
     this.buildSwBtn();
     this.buildTeamDots();
     this.buildStatusIcons();
-    this.showBanner('バトル開始!', '#9be7ff', () => this.startTurn());
+    const startBattle = () => this.showBanner('バトル開始!', '#9be7ff', () => this.startTurn());
+    if (this.engine.weather !== 'sunny') {
+      const wInfo = WEATHER_INFO[this.engine.weather];
+      this.showBanner(`${wInfo.icon} ${wInfo.name}`, wInfo.color, startBattle);
+    } else {
+      startBattle();
+    }
   }
 
   // ── Background ────────────────────────────────────────────────────────
@@ -270,6 +285,12 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5, 0).setDepth(200);
     this.p1StatusText = this.add.text(28, 14, '', {
       fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#66ff66',
+    }).setDepth(200);
+
+    const wInfo = WEATHER_INFO[this.engine.weather];
+    this.add.text(28, 32, `${wInfo.icon} ${wInfo.name}`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: wInfo.color,
+      fontStyle: 'bold',
     }).setDepth(200);
   }
 
@@ -617,6 +638,7 @@ export class BattleScene extends Phaser.Scene {
       case 'sacrifice':         this.aSacrifice(ev.player, ev.revived, ev.allyIdx, done); break;
       case 'faint':             this.aFaint(ev.player, done); break;
       case 'gameOver':          this.showGameOver(ev.winner); break;
+      case 'weatherTick':       this.aWeatherTick(ev.player, ev.damage, done); break;
       default:                  done();
     }
   }
@@ -951,6 +973,13 @@ export class BattleScene extends Phaser.Scene {
     this.syncAllHpBars();
     this.refreshDots();
     this.time.delayedCall(1400, done);
+  }
+
+  private aWeatherTick(player: 1|2, damage: number, done: () => void): void {
+    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    this.pop(sp.x, sp.y - 70, `-${damage}`, '#aaaaff', 18);
+    this.syncAllHpBars();
+    this.time.delayedCall(420, done);
   }
 
   private aFaint(player: 1|2, done: () => void): void {
