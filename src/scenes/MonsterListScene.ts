@@ -57,7 +57,7 @@ export class MonsterListScene extends Phaser.Scene {
       // Sprite
       const spriteKey = def.frontSprite;
       if (this.textures.exists(spriteKey)) {
-        this.add.image(x - 70, y, spriteKey).setScale(1.8);
+        this.add.image(x - 70, y, spriteKey).setDisplaySize(110, 110);
       }
 
       // Name

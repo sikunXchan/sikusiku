@@ -4,7 +4,7 @@ import { getMove } from '../data/moves';
 import { BattleEngine, createBattleMonster } from '../engine/BattleEngine';
 import { BattleAI } from '../ai/BattleAI';
 import { Effects } from '../fx/Effects';
-import type { BattleAction, BattleEvent, BattleMonster, OwnedMonster } from '../data/types';
+import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster } from '../data/types';
 
 // Layout constants
 const PANEL_Y = 388;
@@ -84,6 +84,7 @@ export class BattleScene extends Phaser.Scene {
 
   private eventQueue: BattleEvent[] = [];
   private processingEvent = false;
+  private tooltipBox?: Phaser.GameObjects.Container;
 
   constructor() {
     super('Battle');
@@ -222,8 +223,10 @@ export class BattleScene extends Phaser.Scene {
       const move = getMove(moveId);
       const container = this.add.container(MOVE_BTN_CENTERS_X[i], BTN_Y_CENTER);
 
-      const bg = this.add.rectangle(0, 0, MOVE_BTN_W, BTN_H, move.color, 0.16);
-      bg.setStrokeStyle(2, move.color, 0.7);
+      // Opaque dark base + colored tint overlay
+      container.add(this.add.rectangle(0, 0, MOVE_BTN_W, BTN_H, 0x080810, 1.0));
+      const bg = this.add.rectangle(0, 0, MOVE_BTN_W, BTN_H, move.color, 0.35);
+      bg.setStrokeStyle(2, move.color, 0.9);
 
       container.add([
         bg,
@@ -232,14 +235,14 @@ export class BattleScene extends Phaser.Scene {
           fontStyle: 'bold', stroke: '#000000', strokeThickness: 3,
         }).setOrigin(0.5),
         this.add.text(0, 2, this.trunc(move.description, 18), {
-          fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#bbbbbb',
+          fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#cccccc',
         }).setOrigin(0.5),
         this.add.text(0, 32, `${move.cooldownTurns}ターン毎`, {
-          fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#777777',
+          fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#aaaaaa',
         }).setOrigin(0.5),
       ]);
 
-      const dimOverlay = this.add.rectangle(0, 0, MOVE_BTN_W, BTN_H, 0x000000, 0.55);
+      const dimOverlay = this.add.rectangle(0, 0, MOVE_BTN_W, BTN_H, 0x000000, 0.6);
       dimOverlay.setVisible(false);
       const cdLabel = this.add.text(0, 0, '', {
         fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#ff5555', fontStyle: 'bold',
@@ -252,33 +255,53 @@ export class BattleScene extends Phaser.Scene {
       this.moveBtns.push(btn);
 
       const idx = i;
-      container.on('pointerover', () => { if (btn.enabled) bg.setAlpha(0.38); });
-      container.on('pointerout', () => { if (btn.enabled) bg.setAlpha(0.16); });
+      let holdTimer: Phaser.Time.TimerEvent | undefined;
+      let showingTooltip = false;
+
+      container.on('pointerover', () => { if (btn.enabled) bg.setAlpha(0.6); });
+      container.on('pointerout', () => {
+        if (btn.enabled) bg.setAlpha(0.35);
+        holdTimer?.remove(); holdTimer = undefined;
+        if (showingTooltip) { this.hideMoveTooltip(); showingTooltip = false; }
+      });
       container.on('pointerdown', () => {
-        if (btn.enabled && this.phase === 'selecting' && !this.p1Action) this.onMove(idx);
+        showingTooltip = false;
+        holdTimer = this.time.delayedCall(400, () => {
+          showingTooltip = true;
+          this.showMoveTooltip(move, MOVE_BTN_CENTERS_X[idx]);
+        });
+      });
+      container.on('pointerup', () => {
+        holdTimer?.remove(); holdTimer = undefined;
+        if (showingTooltip) {
+          this.hideMoveTooltip(); showingTooltip = false;
+        } else if (btn.enabled && this.phase === 'selecting' && !this.p1Action) {
+          this.onMove(idx);
+        }
       });
     });
   }
 
   private buildSwBtn(): void {
     this.swContainer = this.add.container(SW_BTN_X, BTN_Y_CENTER);
-    const bg = this.add.rectangle(0, 0, SW_BTN_W, BTN_H, 0x888888, 0.16);
-    bg.setStrokeStyle(2, 0xaaaaaa, 0.5);
+    this.swContainer.add(this.add.rectangle(0, 0, SW_BTN_W, BTN_H, 0x080810, 1.0));
+    const bg = this.add.rectangle(0, 0, SW_BTN_W, BTN_H, 0x556677, 0.35);
+    bg.setStrokeStyle(2, 0xaaaaaa, 0.8);
     this.swContainer.add([
       bg,
       this.add.text(0, -14, '交代', {
         fontFamily: 'system-ui, sans-serif', fontSize: '24px', color: '#cccccc', fontStyle: 'bold',
       }).setOrigin(0.5),
       this.add.text(0, 22, 'Switch', {
-        fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#666666',
+        fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#aaaaaa',
       }).setOrigin(0.5),
     ]);
-    this.swDim = this.add.rectangle(0, 0, SW_BTN_W, BTN_H, 0x000000, 0.5);
+    this.swDim = this.add.rectangle(0, 0, SW_BTN_W, BTN_H, 0x000000, 0.6);
     this.swDim.setVisible(false);
     this.swContainer.add(this.swDim);
     this.swContainer.setSize(SW_BTN_W, BTN_H).setInteractive({ useHandCursor: true });
-    this.swContainer.on('pointerover', () => { if (this.swEnabled) bg.setAlpha(0.35); });
-    this.swContainer.on('pointerout', () => { if (this.swEnabled) bg.setAlpha(0.16); });
+    this.swContainer.on('pointerover', () => { if (this.swEnabled) bg.setAlpha(0.6); });
+    this.swContainer.on('pointerout', () => { if (this.swEnabled) bg.setAlpha(0.35); });
     this.swContainer.on('pointerdown', () => {
       if (this.swEnabled && this.phase === 'selecting' && !this.p1Action) this.onSwitch();
     });
@@ -845,6 +868,31 @@ export class BattleScene extends Phaser.Scene {
         onComplete: () => { b.destroy(); cb(); },
       }),
     });
+  }
+
+  private showMoveTooltip(move: MoveDef, btnX: number): void {
+    this.hideMoveTooltip();
+    const cx = Phaser.Math.Clamp(btnX, 140, GAME_WIDTH - 140);
+    const cy = PANEL_Y - 55;
+    const w = 260;
+    const c = this.add.container(cx, cy).setDepth(600);
+    c.add(this.add.rectangle(0, 0, w, 95, 0x000000, 0.93).setStrokeStyle(1, 0x777777));
+    c.add(this.add.text(0, -30, move.name, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0.5));
+    c.add(this.add.text(0, -6, move.description, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#dddddd',
+      wordWrap: { width: w - 20 }, align: 'center',
+    }).setOrigin(0.5));
+    c.add(this.add.text(0, 34, `クールダウン ${move.cooldownTurns}ターン`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#aaaaaa',
+    }).setOrigin(0.5));
+    this.tooltipBox = c;
+  }
+
+  private hideMoveTooltip(): void {
+    this.tooltipBox?.destroy();
+    this.tooltipBox = undefined;
   }
 
   private trunc(s: string, n: number): string {
