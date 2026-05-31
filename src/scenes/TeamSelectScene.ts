@@ -106,13 +106,13 @@ export class TeamSelectScene extends Phaser.Scene {
       const atk = applyIV(def.baseStats.atk, owned.ivs.atk);
       const defStat = applyIV(def.baseStats.def, owned.ivs.def);
 
-      const statsText = this.add.text(0, 58, `HP:${hp}  ATK:${atk}  DEF:${defStat}`, {
+      const statsText = this.add.text(0, 68, `HP:${hp}  ATK:${atk}  DEF:${defStat}`, {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '11px',
         color: '#aaaaaa',
       }).setOrigin(0.5);
 
-      const orderText = this.add.text(0, 100, '', {
+      const orderText = this.add.text(0, 108, '', {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '22px',
         color: '#ffe066',
@@ -122,7 +122,42 @@ export class TeamSelectScene extends Phaser.Scene {
       const dimOverlay = this.add.rectangle(0, 0, cardW, cardH, 0x000000, 0.5);
       dimOverlay.setVisible(false);
 
-      container.add([bg, sprite, nameText, statsText, orderText, dimOverlay]);
+      // IV overlay elements (hidden by default, shown on long-press)
+      const ivStats = [
+        { label: 'HP',  val: hp,      iv: owned.ivs.hp,  color: '#66ff99' },
+        { label: 'ATK', val: atk,     iv: owned.ivs.atk, color: '#ff6b6b' },
+        { label: 'DEF', val: defStat, iv: owned.ivs.def, color: '#66ccff' },
+      ];
+      const ivElems: (Phaser.GameObjects.Rectangle | Phaser.GameObjects.Text)[] = [];
+      const barW = 90;
+      const barX = -18;
+
+      for (let s = 0; s < ivStats.length; s++) {
+        const st = ivStats[s];
+        const sy = 50 + s * 22;
+        const barColor = Phaser.Display.Color.HexStringToColor(st.color.replace('#', '')).color;
+
+        const lbl = this.add.text(-90, sy, st.label, {
+          fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#aaaaaa',
+        }).setOrigin(0, 0.5).setVisible(false);
+
+        const valTxt = this.add.text(-54, sy, `${st.val}`, {
+          fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: st.color, fontStyle: 'bold',
+        }).setOrigin(0, 0.5).setVisible(false);
+
+        const barBg = this.add.rectangle(barX + barW / 2, sy, barW, 7, 0x222222)
+          .setVisible(false);
+        const fillW = Math.max(2, (barW * st.iv) / 100);
+        const barFill = this.add.rectangle(barX, sy, fillW, 7, barColor)
+          .setOrigin(0, 0.5).setVisible(false);
+        const ivNum = this.add.text(barX + barW + 4, sy, `${st.iv}`, {
+          fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#cccccc', fontStyle: 'bold',
+        }).setOrigin(0, 0.5).setVisible(false);
+
+        ivElems.push(lbl, valTxt, barBg, barFill, ivNum);
+      }
+
+      container.add([bg, sprite, nameText, statsText, orderText, dimOverlay, ...ivElems]);
       container.setSize(cardW, cardH);
       container.setInteractive({ useHandCursor: true });
 
@@ -132,6 +167,16 @@ export class TeamSelectScene extends Phaser.Scene {
       (container as any).dimOverlay = dimOverlay;
       (container as any).selected = false;
 
+      let holdTimer: Phaser.Time.TimerEvent | undefined;
+      let ivShowing = false;
+      let longPressed = false;
+
+      const showIv = (v: boolean) => {
+        ivShowing = v;
+        statsText.setVisible(!v);
+        ivElems.forEach(el => el.setVisible(v));
+      };
+
       container.on('pointerover', () => {
         if (!(container as any).selected && this.selectedIndices.length < TEAM_SIZE) {
           bg.setAlpha(0.5);
@@ -139,8 +184,26 @@ export class TeamSelectScene extends Phaser.Scene {
       });
       container.on('pointerout', () => {
         if (!(container as any).selected) bg.setAlpha(1);
+        holdTimer?.remove(); holdTimer = undefined;
+        if (ivShowing) showIv(false);
+        longPressed = false;
       });
-      container.on('pointerdown', () => this.toggleSelect(i, container));
+      container.on('pointerdown', () => {
+        longPressed = false;
+        holdTimer = this.time.delayedCall(400, () => {
+          longPressed = true;
+          showIv(true);
+        });
+      });
+      container.on('pointerup', () => {
+        holdTimer?.remove(); holdTimer = undefined;
+        if (ivShowing) {
+          showIv(false);
+        } else if (!longPressed) {
+          this.toggleSelect(i, container);
+        }
+        longPressed = false;
+      });
 
       this.cards.push(container);
     }

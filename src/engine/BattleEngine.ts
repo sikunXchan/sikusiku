@@ -7,6 +7,7 @@ import type {
   BattleMonster,
   OwnedMonster,
   StatusEffect,
+  StatusEffectType,
 } from '../data/types';
 
 export const CRIT_RATE = 0.1;
@@ -45,7 +46,12 @@ export class BattleEngine {
   get p2Active(): BattleMonster { return this.p2Team[this.p2ActiveIdx]; }
 
   isMoveReady(monster: BattleMonster, moveId: string): boolean {
+    if (this.hasStatus(monster, 'bind') || this.hasStatus(monster, 'counterFailed')) return false;
     return (monster.moveCooldowns[moveId] ?? 0) <= this.turn;
+  }
+
+  canSwitch(monster: BattleMonster): boolean {
+    return !this.hasStatus(monster, 'bind') && !this.hasStatus(monster, 'counterFailed');
   }
 
   availableMoves(monster: BattleMonster): string[] {
@@ -59,18 +65,21 @@ export class BattleEngine {
       .map(({ i }) => i);
   }
 
+  hasStatus(monster: BattleMonster, type: StatusEffectType): boolean {
+    return monster.statusEffects.some(se => se.type === type && se.delay === 0 && se.turnsLeft !== 0);
+  }
+
   resolveTurn(p1Action: BattleAction, p2Action: BattleAction): BattleEvent[] {
     const events: BattleEvent[] = [];
-
     events.push({ type: 'revealActions', p1: p1Action, p2: p2Action });
 
-    // Switches happen first
-    if (p1Action.type === 'switch') {
+    // Switches first
+    if (p1Action.type === 'switch' && this.canSwitch(this.p1Active)) {
       const from = this.p1ActiveIdx;
       this.p1ActiveIdx = p1Action.targetIndex;
       events.push({ type: 'switch', player: 1, fromIdx: from, toIdx: p1Action.targetIndex });
     }
-    if (p2Action.type === 'switch') {
+    if (p2Action.type === 'switch' && this.canSwitch(this.p2Active)) {
       const from = this.p2ActiveIdx;
       this.p2ActiveIdx = p2Action.targetIndex;
       events.push({ type: 'switch', player: 2, fromIdx: from, toIdx: p2Action.targetIndex });
@@ -79,11 +88,10 @@ export class BattleEngine {
     const p1 = this.p1Active;
     const p2 = this.p2Active;
 
-    // Determine if each player is attacking (for conditionalDamage)
     const p1Attacking = p1Action.type === 'move' && getMove(p1Action.moveId).baseDamage > 0;
     const p2Attacking = p2Action.type === 'move' && getMove(p2Action.moveId).baseDamage > 0;
 
-    // Set dodge flags before processing any damage
+    // Dodge flags
     if (p1Action.type === 'move' && getMove(p1Action.moveId).effects.some(e => e.type === 'dodge')) {
       p1.dodgingThisTurn = true;
       events.push({ type: 'dodge', player: 1 });
@@ -93,18 +101,41 @@ export class BattleEngine {
       events.push({ type: 'dodge', player: 2 });
     }
 
-    // Process both moves (simultaneous: compute damage from snapshot stats)
+    // Counter flags
+    if (p1Action.type === 'move' && getMove(p1Action.moveId).effects.some(e => e.type === 'counter')) {
+      p1.statusEffects.push({ type: 'counterReady', turnsLeft: 1, delay: 0 });
+    }
+    if (p2Action.type === 'move' && getMove(p2Action.moveId).effects.some(e => e.type === 'counter')) {
+      p2.statusEffects.push({ type: 'counterReady', turnsLeft: 1, delay: 0 });
+    }
+
+    // Snapshot ATK before mutations
     const p1AtkSnap = this.snapshotAtk(p1);
     const p2AtkSnap = this.snapshotAtk(p2);
 
-    if (p1Action.type === 'move' && !getMove(p1Action.moveId).effects.some(e => e.type === 'dodge')) {
-      this.processMoveEffects(p1, p2, p1AtkSnap, p1Action.moveId, events, 1, p2Attacking);
+    // Resolve moves (non-dodge, non-counter)
+    if (p1Action.type === 'move') {
+      const mv = getMove(p1Action.moveId);
+      if (!mv.effects.some(e => e.type === 'dodge' || e.type === 'counter')) {
+        this.processMoveEffects(p1, p2, p1AtkSnap, p1Action.moveId, events, 1, p2Attacking);
+      }
     }
-    if (p2Action.type === 'move' && !getMove(p2Action.moveId).effects.some(e => e.type === 'dodge')) {
-      this.processMoveEffects(p2, p1, p2AtkSnap, p2Action.moveId, events, 2, p1Attacking);
+    if (p2Action.type === 'move') {
+      const mv = getMove(p2Action.moveId);
+      if (!mv.effects.some(e => e.type === 'dodge' || e.type === 'counter')) {
+        this.processMoveEffects(p2, p1, p2AtkSnap, p2Action.moveId, events, 2, p1Attacking);
+      }
     }
 
-    // Apply dodge cooldowns
+    // Resolve counter
+    if (this.hasStatus(p1, 'counterReady')) {
+      this.resolveCounter(p1, p2, p2Action, p2AtkSnap, events, 1);
+    }
+    if (this.hasStatus(p2, 'counterReady')) {
+      this.resolveCounter(p2, p1, p1Action, p1AtkSnap, events, 2);
+    }
+
+    // Dodge cooldown
     if (p1Action.type === 'move' && getMove(p1Action.moveId).effects.some(e => e.type === 'dodge')) {
       p1.moveCooldowns[p1Action.moveId] = this.turn + getMove(p1Action.moveId).cooldownTurns;
     }
@@ -112,17 +143,30 @@ export class BattleEngine {
       p2.moveCooldowns[p2Action.moveId] = this.turn + getMove(p2Action.moveId).cooldownTurns;
     }
 
-    // Clear dodge flags
+    // Counter cooldown
+    if (p1Action.type === 'move' && getMove(p1Action.moveId).effects.some(e => e.type === 'counter')) {
+      p1.moveCooldowns[p1Action.moveId] = this.turn + getMove(p1Action.moveId).cooldownTurns;
+    }
+    if (p2Action.type === 'move' && getMove(p2Action.moveId).effects.some(e => e.type === 'counter')) {
+      p2.moveCooldowns[p2Action.moveId] = this.turn + getMove(p2Action.moveId).cooldownTurns;
+    }
+
+    // Clear this-turn flags
     p1.dodgingThisTurn = false;
     p2.dodgingThisTurn = false;
+    p1.statusEffects = p1.statusEffects.filter(se => se.type !== 'counterReady');
+    p2.statusEffects = p2.statusEffects.filter(se => se.type !== 'counterReady');
 
-    // Tick status effects
+    // Status tick damage
+    this.tickStatusDamage(p1, events, 1);
+    this.tickStatusDamage(p2, events, 2);
+
+    // Tick durations
     this.tickStatusEffects(p1);
     this.tickStatusEffects(p2);
 
     this.turn++;
 
-    // Check faints and game over
     if (p1.fainted) events.push({ type: 'faint', player: 1 });
     if (p2.fainted) events.push({ type: 'faint', player: 2 });
 
@@ -134,7 +178,66 @@ export class BattleEngine {
     return events;
   }
 
-  /** Resolve a "bonus attack" from a forced-switch replacement monster */
+  private resolveCounter(
+    user: BattleMonster,
+    opponent: BattleMonster,
+    oppAction: BattleAction,
+    oppAtkSnap: number,
+    events: BattleEvent[],
+    player: 1 | 2,
+  ): void {
+    const oppAttacking = oppAction.type === 'move' && getMove(oppAction.moveId).baseDamage > 0;
+
+    if (!oppAttacking) {
+      // Counter failed: apply bind to self next turn
+      user.statusEffects.push({ type: 'counterFailed', turnsLeft: 1, delay: 1 });
+      events.push({ type: 'counter', player, damage: 0, failed: true });
+      return;
+    }
+
+    // Calculate what the opponent's damage would have been
+    const oppMove = getMove((oppAction as { moveId: string }).moveId);
+    const rawDmg = this.calcDamage(opponent, user, oppAtkSnap, oppMove.baseDamage, false);
+
+    // Reflect back to opponent
+    opponent.currentHp = Math.max(0, opponent.currentHp - rawDmg);
+    if (opponent.currentHp <= 0) opponent.fainted = true;
+
+    events.push({ type: 'counter', player, damage: rawDmg, failed: false });
+  }
+
+  /** Bonus turn after forced switch: BOTH sides get to attack */
+  resolveBonusTurn(p1Action: BattleAction, p2Action: BattleAction): BattleEvent[] {
+    const events: BattleEvent[] = [];
+
+    const p1 = this.p1Active;
+    const p2 = this.p2Active;
+
+    const p1Attacking = p1Action.type === 'move';
+    const p2Attacking = p2Action.type === 'move';
+
+    const p1AtkSnap = this.snapshotAtk(p1);
+    const p2AtkSnap = this.snapshotAtk(p2);
+
+    if (p1Attacking && p1Action.type === 'move') {
+      this.processMoveEffects(p1, p2, p1AtkSnap, p1Action.moveId, events, 1, p2Attacking);
+    }
+    if (p2Attacking && p2Action.type === 'move') {
+      this.processMoveEffects(p2, p1, p2AtkSnap, p2Action.moveId, events, 2, p1Attacking);
+    }
+
+    if (p1.fainted) events.push({ type: 'faint', player: 1 });
+    if (p2.fainted) events.push({ type: 'faint', player: 2 });
+
+    const p1Alive = this.p1Team.some(m => !m.fainted);
+    const p2Alive = this.p2Team.some(m => !m.fainted);
+    if (!p1Alive) events.push({ type: 'gameOver', winner: 2 });
+    else if (!p2Alive) events.push({ type: 'gameOver', winner: 1 });
+
+    return events;
+  }
+
+  /** @deprecated use resolveBonusTurn */
   resolveBonusAttack(player: 1 | 2, action: BattleAction): BattleEvent[] {
     const events: BattleEvent[] = [];
     if (action.type !== 'move') return events;
@@ -154,6 +257,11 @@ export class BattleEngine {
     else if (!p2Alive) events.push({ type: 'gameOver', winner: 1 });
 
     return events;
+  }
+
+  doForcedSwitch(player: 1 | 2, targetIdx: number): void {
+    if (player === 1) this.p1ActiveIdx = targetIdx;
+    else this.p2ActiveIdx = targetIdx;
   }
 
   captureNetState(): import('../net/messages').GameNetState {
@@ -183,20 +291,11 @@ export class BattleEngine {
     apply(this.p2Team, state.p2Team);
   }
 
-  /** Perform a forced switch for a fainted monster */
-  doForcedSwitch(player: 1 | 2, targetIdx: number): void {
-    if (player === 1) {
-      this.p1ActiveIdx = targetIdx;
-    } else {
-      this.p2ActiveIdx = targetIdx;
-    }
-  }
-
   private snapshotAtk(m: BattleMonster): number {
     let atk = m.atkStat;
     for (const se of m.statusEffects) {
       if (se.type === 'atkDown' && se.delay === 0) {
-        atk = Math.floor(atk * se.multiplier);
+        atk = Math.floor(atk * (se.multiplier ?? 0.8));
       }
     }
     return atk;
@@ -214,6 +313,20 @@ export class BattleEngine {
     const move = getMove(moveId);
     attacker.moveCooldowns[moveId] = this.turn + move.cooldownTurns;
 
+    // Paralysis check: 20% chance move fails
+    if (this.hasStatus(attacker, 'paralyze') && Math.random() < 0.2) {
+      events.push({ type: 'statusTick', player, statusType: 'paralyze', damage: 0 });
+      return;
+    }
+    // Confusion check: 15% chance fails + self damage
+    if (this.hasStatus(attacker, 'confuse') && Math.random() < 0.15) {
+      const selfDmg = Math.max(1, Math.floor(attacker.atkStat / 16));
+      attacker.currentHp = Math.max(0, attacker.currentHp - selfDmg);
+      if (attacker.currentHp <= 0) attacker.fainted = true;
+      events.push({ type: 'statusTick', player, statusType: 'confuse', damage: selfDmg });
+      return;
+    }
+
     for (const effect of move.effects) {
       switch (effect.type) {
         case 'drumming':
@@ -225,7 +338,6 @@ export class BattleEngine {
           attacker.statusEffects.push({ type: 'damageTakenBoostSelf', multiplier: effect.value, turnsLeft: -1, delay: 0 });
           break;
         case 'atkDown':
-          // delay=1 so it takes effect next turn (simultaneous resolution fairness)
           defender.statusEffects.push({ type: 'atkDown', multiplier: effect.value, turnsLeft: 3, delay: 1 });
           events.push({ type: 'atkDebuff', player, target: player === 1 ? 2 : 1 });
           break;
@@ -246,15 +358,79 @@ export class BattleEngine {
             }
           }
           break;
+        case 'applyParalyze':
+          if (!this.hasStatus(defender, 'paralyze')) {
+            defender.statusEffects.push({ type: 'paralyze', turnsLeft: effect.value, delay: 0 });
+            events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'paralyze' });
+          }
+          break;
+        case 'applyBurn':
+          if (!this.hasStatus(defender, 'burn')) {
+            defender.statusEffects.push({ type: 'burn', turnsLeft: effect.value || 2, delay: 0 });
+            events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'burn' });
+          }
+          break;
+        case 'applyPoison':
+          if (!this.hasStatus(defender, 'poison')) {
+            defender.statusEffects.push({ type: 'poison', turnsLeft: effect.value || 2, delay: 0 });
+            events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'poison' });
+          }
+          break;
+        case 'applyConfuse':
+          if (!this.hasStatus(defender, 'confuse')) {
+            defender.statusEffects.push({ type: 'confuse', turnsLeft: effect.value || 2, delay: 0 });
+            events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'confuse' });
+          }
+          break;
+        case 'applyBind':
+          if (!this.hasStatus(defender, 'bind')) {
+            defender.statusEffects.push({ type: 'bind', turnsLeft: 1, delay: 0 });
+            events.push({ type: 'statusApply', player, target: player === 1 ? 2 : 1, statusType: 'bind' });
+          }
+          break;
+        case 'applyCritBoost':
+          attacker.statusEffects.push({ type: 'critBoost', turnsLeft: effect.value, delay: 0 });
+          events.push({ type: 'buff', player, moveId, description: `${effect.value}ターン間、必ず急所!` });
+          break;
+        case 'applyAtkDebuff':
+          // Persistent ATK debuff on opponent (最悪な呪い: -10% for N turns)
+          defender.statusEffects.push({ type: 'atkDebuffOnOpponent', multiplier: 0.9, turnsLeft: effect.value, delay: 0 });
+          events.push({ type: 'buff', player, moveId, description: `${effect.value}ターン間、相手ATK-10%` });
+          break;
+        case 'ohko': {
+          const dodged = defender.dodgingThisTurn;
+          const countered = this.hasStatus(defender, 'counterReady');
+          if (dodged || countered) {
+            // Self dies instead
+            attacker.currentHp = 0;
+            attacker.fainted = true;
+            events.push({ type: 'ohko', player, succeeded: false });
+          } else {
+            // Opponent HP to 0, self takes 100 damage
+            defender.currentHp = 0;
+            defender.fainted = true;
+            const selfDmg = Math.min(effect.value, attacker.currentHp - 1);
+            attacker.currentHp = Math.max(1, attacker.currentHp - selfDmg);
+            events.push({ type: 'ohko', player, succeeded: true });
+          }
+          break;
+        }
+        default:
+          break;
       }
     }
 
     if (move.baseDamage > 0) {
       const dodged = defender.dodgingThisTurn && !move.guaranteed;
+      const countered = !dodged && this.hasStatus(defender, 'counterReady');
       if (dodged) {
         events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: true });
+      } else if (countered) {
+        // Damage will be resolved in resolveCounter
+        events.push({ type: 'attack', player, moveId, damage: 0, critical: false, dodged: false });
       } else {
-        const critical = Math.random() < CRIT_RATE;
+        const forceCrit = this.hasStatus(attacker, 'critBoost');
+        const critical = forceCrit || Math.random() < CRIT_RATE;
         const raw = this.calcDamage(attacker, defender, atkSnap, move.baseDamage, critical);
         const actual = this.applyDamage(attacker, defender, raw, atkSnap, critical);
         events.push({ type: 'attack', player, moveId, damage: actual, critical, dodged: false });
@@ -269,12 +445,19 @@ export class BattleEngine {
     baseDmg: number,
     critical: boolean,
   ): number {
-    let dmg = Math.floor(baseDmg * (atkSnap / 100) * (100 / Math.max(1, defender.defStat)));
+    // Apply atkDebuffOnOpponent (最悪な呪い: reduces attacker's effective ATK)
+    let effectiveAtk = atkSnap;
+    for (const se of attacker.statusEffects) {
+      if (se.type === 'atkDebuffOnOpponent' && se.delay === 0) {
+        effectiveAtk = Math.floor(effectiveAtk * (se.multiplier ?? 0.9));
+      }
+    }
 
-    // Consume damage boost
+    let dmg = Math.floor(baseDmg * (effectiveAtk / 100) * (100 / Math.max(1, defender.defStat)));
+
     const boostIdx = attacker.statusEffects.findIndex(se => se.type === 'damageBoostSelf' && se.delay === 0);
     if (boostIdx >= 0) {
-      dmg = Math.floor(dmg * attacker.statusEffects[boostIdx].multiplier);
+      dmg = Math.floor(dmg * (attacker.statusEffects[boostIdx].multiplier ?? 1));
       attacker.statusEffects.splice(boostIdx, 1);
     }
 
@@ -289,11 +472,10 @@ export class BattleEngine {
     _atkSnap: number,
     _critical: boolean,
   ): number {
-    // Consume damageTakenBoost
     const takenIdx = defender.statusEffects.findIndex(se => se.type === 'damageTakenBoostSelf' && se.delay === 0);
     let mult = 1;
     if (takenIdx >= 0) {
-      mult = defender.statusEffects[takenIdx].multiplier;
+      mult = defender.statusEffects[takenIdx].multiplier ?? 1;
       defender.statusEffects.splice(takenIdx, 1);
     }
 
@@ -303,13 +485,27 @@ export class BattleEngine {
     return final;
   }
 
+  private tickStatusDamage(monster: BattleMonster, events: BattleEvent[], player: 1 | 2): void {
+    for (const se of monster.statusEffects) {
+      if (se.delay > 0) continue;
+      if (se.type === 'burn') {
+        const dmg = Math.max(1, Math.floor(monster.maxHp / 18));
+        monster.currentHp = Math.max(0, monster.currentHp - dmg);
+        if (monster.currentHp <= 0) monster.fainted = true;
+        events.push({ type: 'statusTick', player, statusType: 'burn', damage: dmg });
+      } else if (se.type === 'poison') {
+        const dmg = Math.max(1, Math.floor(monster.currentHp / 8));
+        monster.currentHp = Math.max(0, monster.currentHp - dmg);
+        if (monster.currentHp <= 0) monster.fainted = true;
+        events.push({ type: 'statusTick', player, statusType: 'poison', damage: dmg });
+      }
+    }
+  }
+
   private tickStatusEffects(monster: BattleMonster): void {
     monster.statusEffects = monster.statusEffects.filter((se: StatusEffect) => {
-      if (se.delay > 0) {
-        se.delay--;
-        return true;
-      }
-      if (se.turnsLeft < 0) return true; // until-consumed
+      if (se.delay > 0) { se.delay--; return true; }
+      if (se.turnsLeft < 0) return true;
       se.turnsLeft--;
       return se.turnsLeft > 0;
     });

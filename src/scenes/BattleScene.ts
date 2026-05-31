@@ -5,8 +5,9 @@ import { BattleEngine, createBattleMonster } from '../engine/BattleEngine';
 import { BattleAI } from '../ai/BattleAI';
 import { Effects } from '../fx/Effects';
 import { NetManager } from '../net/NetManager';
+import { addOwnedMonster, loadSave, persistSave, randomIVs } from '../storage/SaveData';
 import type { NetworkMsg } from '../net/messages';
-import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster } from '../data/types';
+import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster, StatusEffect, StatusEffectType } from '../data/types';
 
 // Layout constants
 const PANEL_Y = 388;
@@ -94,6 +95,10 @@ export class BattleScene extends Phaser.Scene {
   private processingEvent = false;
   private tooltipBox?: Phaser.GameObjects.Container;
   private netPrecomputedEvents?: BattleEvent[];
+  private p1StatusIcons: Phaser.GameObjects.Text[] = [];
+  private p2StatusIcons: Phaser.GameObjects.Text[] = [];
+  private bonusP1Action?: BattleAction;
+  private bonusP2Action?: BattleAction;
 
   // ── Network helpers ───────────────────────────────────────────────────
   private get myActive(): BattleMonster {
@@ -149,6 +154,7 @@ export class BattleScene extends Phaser.Scene {
     this.buildMoveBtns(this.myActive);
     this.buildSwBtn();
     this.buildTeamDots();
+    this.buildStatusIcons();
     this.showBanner('バトル開始!', '#9be7ff', () => this.startTurn());
   }
 
@@ -206,6 +212,7 @@ export class BattleScene extends Phaser.Scene {
   private syncAllHpBars(): void {
     this.syncHpBar(this.engine.p2Active, this.enemyHpUI);
     this.syncHpBar(this.engine.p1Active, this.playerHpUI);
+    this.refreshStatusIcons();
   }
 
   // ── Sprites ───────────────────────────────────────────────────────────
@@ -558,9 +565,13 @@ export class BattleScene extends Phaser.Scene {
       case 'switch':            this.aSwitch(ev.player, ev.toIdx, done); break;
       case 'dodge':             this.aDodge(ev.player, done); break;
       case 'attack':            this.aAttack(ev.player, ev.moveId, ev.damage, ev.critical, ev.dodged, done); break;
-      case 'buff':              this.aBuff(ev.player, ev.description, done); break;
+      case 'buff':              this.aBuff(ev.player, ev.moveId, ev.description, done); break;
       case 'atkDebuff':         this.aAtkDebuff(ev.target, done); break;
       case 'conditionalDamage': this.aConditional(ev.player, ev.damage, ev.dodged, done); break;
+      case 'counter':           this.aCounter(ev.player, ev.damage, ev.failed, done); break;
+      case 'ohko':              this.aOhko(ev.player, ev.succeeded, done); break;
+      case 'statusApply':       this.aStatusApply(ev.target, ev.statusType, done); break;
+      case 'statusTick':        this.aStatusTick(ev.player, ev.statusType, ev.damage, done); break;
       case 'faint':             this.aFaint(ev.player, done); break;
       case 'gameOver':          this.showGameOver(ev.winner); break;
       default:                  done();
@@ -649,14 +660,31 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  private aBuff(player: 1|2, desc: string, done: () => void): void {
+  private aBuff(player: 1|2, moveId: string, desc: string, done: () => void): void {
     const sp = player === 1 ? this.playerSprite : this.enemySprite;
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
     this.setLog(`${mon.monsterDef.name}: ${desc}`);
-    const glow = this.add.circle(sp.x, sp.y, 56, 0xffd700, 0.25).setBlendMode(Phaser.BlendModes.ADD);
-    this.tweens.add({ targets: glow, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 700, onComplete: () => glow.destroy() });
+
+    const isCurse = ['akumanoroi','kyuushoNoroi','drumming','furueru'].includes(moveId);
+    const color = isCurse ? 0xaa44ff : 0xffd700;
+
+    if (isCurse) {
+      // Curse: dark spiral effect
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2;
+        const orb = this.add.circle(sp.x + Math.cos(angle) * 50, sp.y + Math.sin(angle) * 50, 6, color, 0.9)
+          .setBlendMode(Phaser.BlendModes.ADD);
+        this.tweens.add({ targets: orb, x: sp.x, y: sp.y, alpha: 0, duration: 500, delay: i * 60,
+          onComplete: () => orb.destroy() });
+      }
+    } else {
+      const glow = this.add.circle(sp.x, sp.y, 56, color, 0.25).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: glow, scaleX: 2.2, scaleY: 2.2, alpha: 0, duration: 700, onComplete: () => glow.destroy() });
+    }
+
     this.tweens.add({ targets: sp, scaleX: sp.scaleX * 1.12, scaleY: sp.scaleY * 1.12, duration: 200, yoyo: true });
-    this.pop(sp.x, sp.y - 90, desc, '#ffd700', 17);
+    this.pop(sp.x, sp.y - 90, desc, isCurse ? '#dd88ff' : '#ffd700', 17);
+    this.refreshStatusIcons();
     this.time.delayedCall(820, done);
   }
 
@@ -666,9 +694,110 @@ export class BattleScene extends Phaser.Scene {
     this.setLog(`${mon.monsterDef.name} の こうげきが さがった!`);
     const aura = this.add.circle(sp.x, sp.y, 50, 0x880000, 0.3).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: aura, scaleX: 1.8, scaleY: 1.8, alpha: 0, duration: 600, onComplete: () => aura.destroy() });
+    // Shikken/Chakken special: blade slash streak
+    for (let i = 0; i < 3; i++) {
+      const slash = this.add.rectangle(sp.x + (i - 1) * 18, sp.y - 20, 4, 55, 0x66ccff, 0.85)
+        .setAngle(-35).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: slash, alpha: 0, x: slash.x + 28, duration: 280, delay: i * 60,
+        onComplete: () => slash.destroy() });
+    }
     this.tweens.add({ targets: sp, x: sp.x + 12, duration: 55, yoyo: true, repeat: 4 });
     this.pop(sp.x, sp.y - 90, 'こうげき↓', '#ff6666', 20);
     this.time.delayedCall(720, done);
+  }
+
+  private aCounter(player: 1|2, damage: number, failed: boolean, done: () => void): void {
+    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const defSp = player === 1 ? this.enemySprite : this.playerSprite;
+    const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
+
+    if (failed) {
+      this.setLog(`${mon.monsterDef.name} のカウンター — 不発!`);
+      const fail = this.add.circle(sp.x, sp.y, 40, 0x444444, 0.5).setBlendMode(Phaser.BlendModes.ADD);
+      this.tweens.add({ targets: fail, alpha: 0, scaleX: 2, scaleY: 2, duration: 600, onComplete: () => fail.destroy() });
+      this.pop(sp.x, sp.y - 80, '不発…', '#888888', 22);
+      this.time.delayedCall(700, done);
+      return;
+    }
+
+    this.setLog(`${mon.monsterDef.name} のカウンター! ${damage}ダメ返し!`);
+    // Shield flash then burst toward opponent
+    const shield = this.add.circle(sp.x, sp.y, 50, 0xff6600, 0.5).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: shield, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 400, onComplete: () => shield.destroy() });
+    this.time.delayedCall(200, () => {
+      this.fx.hitBurst(defSp.x, defSp.y - 30, 0xff6600, true);
+      this.flashImg(defSp);
+      this.fx.shake(0.01, 200);
+      this.syncAllHpBars();
+      this.pop(defSp.x, defSp.y - 85, `${damage}!`, '#ff8800', 36);
+    });
+    this.time.delayedCall(780, done);
+  }
+
+  private aOhko(player: 1|2, succeeded: boolean, done: () => void): void {
+    const atkSp = player === 1 ? this.playerSprite : this.enemySprite;
+    const defSp = player === 1 ? this.enemySprite : this.playerSprite;
+    const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
+
+    if (!succeeded) {
+      this.setLog(`${mon.monsterDef.name} の漆黒のつるぎ — 無効化された!`);
+      this.fx.shake(0.015, 300);
+      const dark = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0)
+        .setDepth(500);
+      this.tweens.add({ targets: dark, alpha: 0.8, duration: 300, yoyo: true, onComplete: () => dark.destroy() });
+      this.syncAllHpBars();
+      this.time.delayedCall(600, done);
+      return;
+    }
+
+    this.setLog(`${mon.monsterDef.name} の漆黒のつるぎ! 一撃!`);
+    // Dark explosion
+    const dark = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0).setDepth(500);
+    this.tweens.add({ targets: dark, alpha: 0.95, duration: 180 });
+    this.time.delayedCall(180, () => {
+      this.fx.hitBurst(defSp.x, defSp.y - 30, 0x440088, true);
+      this.fx.shake(0.02, 350);
+      this.syncAllHpBars();
+      this.pop(defSp.x, defSp.y - 85, '一撃!!', '#cc44ff', 48);
+      this.tweens.add({ targets: dark, alpha: 0, duration: 400, delay: 200, onComplete: () => dark.destroy() });
+      // Self damage flash
+      this.tweens.add({ targets: atkSp, alpha: 0.4, duration: 100, yoyo: true, repeat: 2 });
+      this.pop(atkSp.x, atkSp.y - 70, '-100', '#ff8888', 20);
+    });
+    this.time.delayedCall(900, done);
+  }
+
+  private aStatusApply(target: 1|2, statusType: StatusEffectType, done: () => void): void {
+    const sp = target === 1 ? this.playerSprite : this.enemySprite;
+    const labels: Record<string, [string, number]> = {
+      burn:     ['🔥 やけど!', 0xff4400],
+      paralyze: ['⚡ まひ!',   0xffee00],
+      poison:   ['☠ どく!',   0x88ff44],
+      confuse:  ['😵 こんらん!', 0xff88ff],
+      bind:     ['🔒 そくばく!', 0x4488ff],
+    };
+    const [label, color] = labels[statusType] ?? [`${statusType}!`, 0xffffff];
+    this.pop(sp.x, sp.y - 90, label, `#${color.toString(16).padStart(6,'0')}`, 22);
+    const ring = this.add.circle(sp.x, sp.y, 44, color, 0.35).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets: ring, scaleX: 2, scaleY: 2, alpha: 0, duration: 600, onComplete: () => ring.destroy() });
+    this.refreshStatusIcons();
+    this.time.delayedCall(600, done);
+  }
+
+  private aStatusTick(player: 1|2, statusType: StatusEffectType, damage: number, done: () => void): void {
+    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const colors: Record<string, number> = { burn: 0xff4400, poison: 0x88ff44, paralyze: 0xffee00, confuse: 0xff88ff };
+    const col = `#${(colors[statusType] ?? 0xffffff).toString(16).padStart(6,'0')}`;
+    if (statusType === 'paralyze') {
+      this.pop(sp.x, sp.y - 70, 'まひ! 技が失敗!', '#ffee00', 18);
+    } else if (statusType === 'confuse') {
+      this.pop(sp.x, sp.y - 70, `こんらん! ${damage}ダメ`, '#ff88ff', 18);
+      this.syncAllHpBars();
+    } else if (damage > 0) {
+      this.pop(sp.x, sp.y - 70, `-${damage}`, col, 20);
+      this.syncAllHpBars();
+    }
+    this.time.delayedCall(560, done);
   }
 
   private aConditional(player: 1|2, damage: number, dodged: boolean, done: () => void): void {
@@ -719,7 +848,6 @@ export class BattleScene extends Phaser.Scene {
         if (faintedPlayer === this.localPlayer) {
           this.doForcedSwitch(faintedPlayer);
         }
-        // else: wait for opponent's forcedSwitch net message
       } else {
         this.nextTurn();
       }
@@ -733,7 +861,7 @@ export class BattleScene extends Phaser.Scene {
         const idx = this.ai.chooseForcedSwitch(this.engine.p2Team, this.engine.p2ActiveIdx, this.engine, 2);
         this.engine.doForcedSwitch(2, idx);
         this.resetSprites(); this.syncAllHpBars();
-        this.time.delayedCall(300, () => this.nextTurn());
+        this.time.delayedCall(300, () => this.startBonusTurn());
       } else {
         this.doForcedSwitch(2);
       }
@@ -760,32 +888,27 @@ export class BattleScene extends Phaser.Scene {
         if (this.mode === 'network') {
           this.time.delayedCall(300, () => { this.buildMoveBtns(this.myActive); this.nextTurn(); });
         } else {
-          this.doForcedAttack(player);
+          this.startBonusTurn();
         }
       },
       () => {/* forced — no cancel */},
     );
   }
 
-  private doForcedAttack(player: 1|2): void {
+  // Both sides attack after forced switch (new spec)
+  private startBonusTurn(): void {
     this.phase = 'forcedAttack';
-    const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
+    this.bonusP1Action = undefined;
+    this.bonusP2Action = undefined;
 
-    // CPU handles player 2 (or player 1 in quest with no controls needed)
-    if (player !== 1) {
-      const action = this.ai.decide(this.engine, player);
-      const atk: BattleAction = action.type === 'move' ? action : { type: 'none' };
-      this.setLog(`${mon.monsterDef.name} 登場!`);
-      this.time.delayedCall(380, () => {
-        this.eventQueue = this.engine.resolveBonusAttack(player, atk);
-        this.processingEvent = false; this.nextEvent();
-      });
-      return;
+    if (this.mode === 'quest') {
+      this.bonusP2Action = this.ai.decide(this.engine, 2);
+      if ((this.bonusP2Action as BattleAction).type !== 'move') this.bonusP2Action = { type: 'none' };
     }
 
-    // Human player 1 forced attack
+    const mon = this.myActive;
     this.buildMoveBtns(mon);
-    this.setLog(`${mon.monsterDef.name} 登場! 技を選べ! (交代不可)`);
+    this.setLog(`${mon.monsterDef.name} 登場! 技を選べ!`);
     this.p1StatusText.setText('');
     this.refreshMoveBtns();
     this.swEnabled = false; this.swDim.setVisible(true);
@@ -796,9 +919,11 @@ export class BattleScene extends Phaser.Scene {
         if (!btn.enabled || this.phase !== 'forcedAttack') return;
         const moveId = mon.monsterDef.moveIds[i];
         if (!moveId || !this.engine.isMoveReady(mon, moveId)) return;
+        this.setMyAction({ type: 'move', moveId });
+        this.bonusP1Action = this.p1Action;
+        this.bonusP2Action = this.p2Action ?? this.bonusP2Action ?? { type: 'none' };
         this.disableAllBtns();
-        this.eventQueue = this.engine.resolveBonusAttack(1, { type: 'move', moveId });
-        this.processingEvent = false; this.nextEvent();
+        this.execBonusTurn();
       });
     });
 
@@ -815,11 +940,24 @@ export class BattleScene extends Phaser.Scene {
         if (this.timerVal <= 0 && this.phase === 'forcedAttack') {
           this.timerEvent?.remove();
           this.disableAllBtns();
-          this.eventQueue = this.engine.resolveBonusAttack(1, { type: 'none' });
-          this.processingEvent = false; this.nextEvent();
+          this.bonusP1Action = { type: 'none' };
+          this.bonusP2Action = this.mode === 'quest' ? (this.bonusP2Action ?? { type: 'none' }) : { type: 'none' };
+          this.execBonusTurn();
         }
       },
     });
+  }
+
+  private execBonusTurn(): void {
+    const p1A = this.bonusP1Action ?? { type: 'none' };
+    const p2A = this.bonusP2Action ?? { type: 'none' };
+    this.phase = 'animating';
+    this.eventQueue = this.engine.resolveBonusTurn(
+      this.localPlayer === 1 ? p1A : p2A,
+      this.localPlayer === 1 ? p2A : p1A,
+    );
+    this.processingEvent = false;
+    this.nextEvent();
   }
 
   private nextTurn(): void {
@@ -836,8 +974,9 @@ export class BattleScene extends Phaser.Scene {
     this.timerEvent?.remove();
     this.fx.shake(0.018, 380);
 
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.6).setDepth(2000);
     const isWin = this.mode === 'network' ? winner === this.localPlayer : winner === 1;
+
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.6).setDepth(2000);
     const banner = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 28,
       isWin ? 'YOU WIN!' : 'YOU LOSE…', {
       fontFamily: 'system-ui, sans-serif', fontSize: '72px',
@@ -846,12 +985,73 @@ export class BattleScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(2001).setScale(0);
     this.tweens.add({ targets: banner, scale: 1, duration: 380, ease: 'Back.easeOut' });
 
-    const hint = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 62, 'タップでタイトルへ', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffffff',
-    }).setOrigin(0.5).setDepth(2001);
-    this.tweens.add({ targets: hint, alpha: { from: 0.4, to: 1 }, duration: 700, yoyo: true, repeat: -1 });
+    if (isWin && this.mode === 'quest') {
+      this.time.delayedCall(800, () => this.showCatchReward());
+    } else {
+      const hint = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 62, 'タップでタイトルへ', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffffff',
+      }).setOrigin(0.5).setDepth(2001);
+      this.tweens.add({ targets: hint, alpha: { from: 0.4, to: 1 }, duration: 700, yoyo: true, repeat: -1 });
+      this.time.delayedCall(700, () => this.input.once('pointerdown', () => this.scene.start('Title')));
+    }
+  }
 
-    this.time.delayedCall(700, () => this.input.once('pointerdown', () => this.scene.start('Title')));
+  private showCatchReward(): void {
+    const cpuTeam = this.engine.p2Team;
+    const D = 2100;
+    const panelW = Math.min(GAME_WIDTH - 60, cpuTeam.length * 195 + 40);
+
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.8).setDepth(D);
+    overlay.setInteractive();
+    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(D + 1);
+    panel.add(this.add.rectangle(0, 0, panelW, 230, 0x1a1530).setStrokeStyle(2, 0xffe066));
+    panel.add(this.add.text(0, -95, '🎉 仲間にするモンスターを選ぼう!', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '17px', color: '#ffe066', fontStyle: 'bold',
+    }).setOrigin(0.5));
+
+    const startOff = -((cpuTeam.length - 1) * 190) / 2;
+    cpuTeam.forEach((mon, ti) => {
+      const bx = startOff + ti * 190;
+      const bg = this.add.rectangle(bx, 20, 175, 115, 0x2a2350).setStrokeStyle(2, 0x5a4cd0);
+      panel.add(bg);
+      panel.add(this.add.text(bx, -30, mon.monsterDef.name, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#ffffff', fontStyle: 'bold',
+      }).setOrigin(0.5));
+      if (this.textures.exists(mon.monsterDef.frontSprite)) {
+        const img = this.add.image(bx, 25, mon.monsterDef.frontSprite);
+        img.setScale(Math.min(70 / img.width, 70 / img.height));
+        panel.add(img);
+      }
+      panel.add(this.add.text(bx, 72, `HP:${mon.maxHp} ATK:${mon.atkStat} DEF:${mon.defStat}`, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#aaaaaa',
+      }).setOrigin(0.5));
+      bg.setInteractive({ useHandCursor: true });
+      bg.on('pointerover', () => bg.setFillStyle(0x3a3560));
+      bg.on('pointerout', () => bg.setFillStyle(0x2a2350));
+      bg.on('pointerdown', () => {
+        overlay.destroy(); panel.destroy();
+        const save = loadSave();
+        const newIvs = randomIVs();
+        addOwnedMonster(save, mon.monsterDef.id, newIvs);
+        persistSave(save);
+        this.showCatchConfirm(mon.monsterDef.name);
+      });
+    });
+  }
+
+  private showCatchConfirm(name: string): void {
+    const D = 2200;
+    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.75).setDepth(D);
+    const t = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 20, `${name} を仲間にした!`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '30px', color: '#9be7ff',
+      fontStyle: 'bold', stroke: '#000000', strokeThickness: 6,
+    }).setOrigin(0.5).setDepth(D + 1).setScale(0);
+    this.tweens.add({ targets: t, scale: 1, duration: 340, ease: 'Back.easeOut' });
+    const hint = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, 'タップでタイトルへ', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#ffffff',
+    }).setOrigin(0.5).setDepth(D + 1);
+    this.tweens.add({ targets: hint, alpha: { from: 0.4, to: 1 }, duration: 700, yoyo: true, repeat: -1 });
+    this.time.delayedCall(500, () => this.input.once('pointerdown', () => this.scene.start('Title')));
   }
 
   // ── Switch popup ──────────────────────────────────────────────────────
@@ -997,6 +1197,35 @@ export class BattleScene extends Phaser.Scene {
 
   private trunc(s: string, n: number): string {
     return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+
+  // ── Status icon bar ───────────────────────────────────────────────────
+
+  private buildStatusIcons(): void {
+    for (let i = 0; i < 5; i++) {
+      this.p1StatusIcons.push(this.add.text(PLAYER_HP_X + i * 26, PLAYER_HP_Y + 28, '', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#ffffff',
+      }).setDepth(62));
+      this.p2StatusIcons.push(this.add.text(ENEMY_HP_X + i * 26, ENEMY_HP_Y + 28, '', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#ffffff',
+      }).setDepth(62));
+    }
+  }
+
+  private refreshStatusIcons(): void {
+    const icons: Record<string, string> = {
+      burn: '🔥', paralyze: '⚡', poison: '☠', confuse: '😵', bind: '🔒',
+      critBoost: '✨', atkDebuffOnOpponent: '⬇', damageBoostSelf: '💥',
+    };
+    const fillIcons = (team: BattleMonster[], list: Phaser.GameObjects.Text[]) => {
+      const activeEffects = team
+        .flatMap(m => m.statusEffects.filter((se: StatusEffect) => se.delay === 0 && se.turnsLeft !== 0))
+        .map(se => icons[se.type])
+        .filter(Boolean);
+      list.forEach((t, i) => t.setText(activeEffects[i] ?? ''));
+    };
+    fillIcons([this.engine.p1Active], this.p1StatusIcons);
+    fillIcons([this.engine.p2Active], this.p2StatusIcons);
   }
 
   // ── Network message handling ──────────────────────────────────────────
