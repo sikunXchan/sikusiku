@@ -145,14 +145,15 @@ export class TeamSelectScene extends Phaser.Scene {
           fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: st.color, fontStyle: 'bold',
         }).setOrigin(0, 0.5).setVisible(false);
 
-        const barBg = this.add.rectangle(barX + barW / 2, sy, barW, 7, 0x222222)
+        const barBg = this.add.rectangle(barX + barW / 2, sy, barW, 14, 0x222222)
           .setVisible(false);
         const fillW = Math.max(2, (barW * st.iv) / 100);
-        const barFill = this.add.rectangle(barX, sy, fillW, 7, barColor)
+        const barFill = this.add.rectangle(barX, sy, fillW, 14, barColor)
           .setOrigin(0, 0.5).setVisible(false);
-        const ivNum = this.add.text(barX + barW + 4, sy, `${st.iv}`, {
-          fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#cccccc', fontStyle: 'bold',
-        }).setOrigin(0, 0.5).setVisible(false);
+        const ivNum = this.add.text(barX + barW / 2, sy, `${st.iv}`, {
+          fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#ffffff', fontStyle: 'bold',
+          stroke: '#000000', strokeThickness: 2,
+        }).setOrigin(0.5, 0.5).setVisible(false);
 
         ivElems.push(lbl, valTxt, barBg, barFill, ivNum);
       }

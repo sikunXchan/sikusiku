@@ -112,13 +112,15 @@ export class MonsterListScene extends Phaser.Scene {
 
       const barX = x + 100;
       const barW = 85;
+      const barH = 14;
       const barColor = Phaser.Display.Color.HexStringToColor(stat.color.replace('#', '')).color;
-      const barBg = this.add.rectangle(barX + barW / 2, sy, barW, 8, 0x222222).setVisible(false);
+      const barBg = this.add.rectangle(barX + barW / 2, sy, barW, barH, 0x222222).setVisible(false);
       const fillW = Math.max(2, (barW * stat.iv) / 100);
-      const barFill = this.add.rectangle(barX, sy, fillW, 8, barColor).setOrigin(0, 0.5).setVisible(false);
-      const ivLabel = this.add.text(barX + barW + 4, sy, `${stat.iv}`, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#cccccc', fontStyle: 'bold',
-      }).setOrigin(0, 0.5).setVisible(false);
+      const barFill = this.add.rectangle(barX, sy, fillW, barH, barColor).setOrigin(0, 0.5).setVisible(false);
+      const ivLabel = this.add.text(barX + barW / 2, sy, `${stat.iv}`, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#ffffff', fontStyle: 'bold',
+        stroke: '#000000', strokeThickness: 2,
+      }).setOrigin(0.5, 0.5).setVisible(false);
 
       ivElems.push(barBg, barFill, ivLabel);
     }
