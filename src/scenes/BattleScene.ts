@@ -57,6 +57,18 @@ export interface BattleSceneData {
   localPlayer?: 1 | 2;
 }
 
+const STATUS_DESCS: Record<string, string> = {
+  burn:                '🔥 やけど\n毎ターン 最大HP÷18 ダメ',
+  paralyze:            '⚡ まひ\n20%の確率で技が失敗',
+  poison:              '☠ どく\n毎ターン 現在HP÷8 ダメ',
+  confuse:             '😵 こんらん\n15%の確率で技失敗\n失敗時は自傷ダメあり',
+  bind:                '🔒 そくばく\n1ターン 行動・交代不可',
+  critBoost:           '✨ 急所の呪い\n必ず急所に当たる',
+  atkDebuffOnOpponent: '⬇ こうげき低下\n攻撃力が下がっている',
+  counterReady:        '🛡 カウンター準備中\n次の攻撃を跳ね返す',
+  counterFailed:       '🔗 カウンター失敗\n次のターン行動不可',
+};
+
 export class BattleScene extends Phaser.Scene {
   private engine!: BattleEngine;
   private ai!: BattleAI;
@@ -66,7 +78,7 @@ export class BattleScene extends Phaser.Scene {
 
   private phase: 'selecting' | 'revealing' | 'animating' | 'forcedSwitch' | 'forcedAttack' | 'gameOver' = 'selecting';
 
-  private timerVal = 20;
+  private timerVal = 60;
   private timerEvent?: Phaser.Time.TimerEvent;
   private timerText!: Phaser.GameObjects.Text;
   private timerBar!: Phaser.GameObjects.Rectangle;
@@ -97,6 +109,8 @@ export class BattleScene extends Phaser.Scene {
   private netPrecomputedEvents?: BattleEvent[];
   private p1StatusIcons: Phaser.GameObjects.Text[] = [];
   private p2StatusIcons: Phaser.GameObjects.Text[] = [];
+  private p1StatusTypes: string[] = [];
+  private p2StatusTypes: string[] = [];
   private bonusP1Action?: BattleAction;
   private bonusP2Action?: BattleAction;
 
@@ -244,7 +258,7 @@ export class BattleScene extends Phaser.Scene {
   private buildStatusBar(): void {
     this.add.rectangle(0, 0, GAME_WIDTH, 10, 0x222222).setOrigin(0, 0);
     this.timerBar = this.add.rectangle(0, 0, GAME_WIDTH, 10, 0xffe066).setOrigin(0, 0);
-    this.timerText = this.add.text(GAME_WIDTH / 2, 14, '20', {
+    this.timerText = this.add.text(GAME_WIDTH / 2, 14, '60', {
       fontFamily: 'system-ui, sans-serif', fontSize: '20px', color: '#ffe066',
       fontStyle: 'bold', stroke: '#000000', strokeThickness: 3,
     }).setOrigin(0.5, 0).setDepth(200);
@@ -359,11 +373,19 @@ export class BattleScene extends Phaser.Scene {
   // ── Team dots ─────────────────────────────────────────────────────────
 
   private buildTeamDots(): void {
+    // "自チーム" label + P1 dots (left group)
+    this.add.text(722, 9, '自チーム', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#66ccff',
+    }).setDepth(200);
     for (let i = 0; i < this.engine.p1Team.length; i++) {
-      this.p1TeamDots.push(this.add.circle(870 + i * 20, 18, 7, 0x66ccff).setDepth(200));
+      this.p1TeamDots.push(this.add.circle(760 + i * 16, 18, 7, 0x66ccff).setDepth(200));
     }
+    // "敵チーム" label + P2 dots (right group)
+    this.add.text(820, 9, '敵チーム', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#ff6b6b',
+    }).setDepth(200);
     for (let i = 0; i < this.engine.p2Team.length; i++) {
-      this.p2TeamDots.push(this.add.circle(GAME_WIDTH - 110 + i * 20, 18, 7, 0xff6b6b).setDepth(200));
+      this.p2TeamDots.push(this.add.circle(858 + i * 16, 18, 7, 0xff6b6b).setDepth(200));
     }
   }
 
@@ -384,7 +406,7 @@ export class BattleScene extends Phaser.Scene {
     this.phase = 'selecting';
     this.p1Action = undefined;
     this.p2Action = undefined;
-    this.timerVal = 20;
+    this.timerVal = 60;
 
     this.refreshMoveBtns();
     this.syncAllHpBars();
@@ -398,10 +420,10 @@ export class BattleScene extends Phaser.Scene {
     }
 
     this.timerEvent?.remove();
-    this.timerText.setText('20').setStyle({ color: '#ffe066' });
+    this.timerText.setText('60').setStyle({ color: '#ffe066' });
     this.timerBar.setFillStyle(0xffe066); this.timerBar.width = GAME_WIDTH;
     this.timerEvent = this.time.addEvent({
-      delay: 1000, repeat: 19,
+      delay: 1000, repeat: 59,
       callback: this.tickTimer, callbackScope: this,
     });
   }
@@ -409,8 +431,8 @@ export class BattleScene extends Phaser.Scene {
   private tickTimer(): void {
     this.timerVal--;
     this.timerText.setText(`${this.timerVal}`);
-    this.timerBar.width = GAME_WIDTH * (this.timerVal / 20);
-    if (this.timerVal <= 5) {
+    this.timerBar.width = GAME_WIDTH * (this.timerVal / 60);
+    if (this.timerVal <= 10) {
       this.timerText.setStyle({ color: '#ff4444' });
       this.timerBar.setFillStyle(0xff4444);
     }
@@ -588,14 +610,14 @@ export class BattleScene extends Phaser.Scene {
     const key = player === 1 ? mon.monsterDef.backSprite : mon.monsterDef.frontSprite;
     this.setLog(`${mon.monsterDef.name} 登場!`);
     this.tweens.add({
-      targets: sp, x: origX + dir * 200, alpha: 0, duration: 240,
+      targets: sp, x: origX + dir * 200, alpha: 0, duration: 360,
       onComplete: () => {
         sp.setTexture(key);
         this.fitSprite(sp, player === 1 ? PLAYER_MAX_W : ENEMY_MAX_W, player === 1 ? PLAYER_MAX_H : ENEMY_MAX_H);
         sp.setAlpha(0).setX(origX - dir * 200);
         this.tweens.add({
-          targets: sp, x: origX, alpha: 1, duration: 260, ease: 'Cubic.easeOut',
-          onComplete: () => { this.syncAllHpBars(); this.time.delayedCall(350, done); },
+          targets: sp, x: origX, alpha: 1, duration: 380, ease: 'Cubic.easeOut',
+          onComplete: () => { this.syncAllHpBars(); this.time.delayedCall(600, done); },
         });
       },
     });
@@ -611,10 +633,10 @@ export class BattleScene extends Phaser.Scene {
       .setScale(sp.scaleX).setAlpha(0.35).setTint(0x9be7ff).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets: ghost, alpha: 0, duration: 400, onComplete: () => ghost.destroy() });
     this.tweens.add({
-      targets: sp, x: origX + dir * 72, duration: 100, ease: 'Cubic.easeOut',
+      targets: sp, x: origX + dir * 72, duration: 150, ease: 'Cubic.easeOut',
       onComplete: () => this.tweens.add({
-        targets: sp, x: origX, duration: 200, ease: 'Cubic.easeIn',
-        onComplete: () => this.time.delayedCall(180, done),
+        targets: sp, x: origX, duration: 300, ease: 'Cubic.easeIn',
+        onComplete: () => this.time.delayedCall(350, done),
       }),
     });
   }
@@ -633,14 +655,14 @@ export class BattleScene extends Phaser.Scene {
     if (dodged) {
       this.time.delayedCall(120, () => {
         this.pop(defSp.x, defSp.y - 80, 'かわした!', '#9be7ff', 24);
-        this.time.delayedCall(550, done);
+        this.time.delayedCall(800, done);
       });
       return;
     }
 
     const rushX = player === 1 ? defSp.x - 110 : defSp.x + 110;
     this.tweens.add({
-      targets: atkSp, x: rushX, duration: 210, ease: 'Cubic.easeIn',
+      targets: atkSp, x: rushX, duration: 290, ease: 'Cubic.easeIn',
       onComplete: () => {
         this.fx.hitBurst(defSp.x, defSp.y - 38, move.color, critical);
         this.flashImg(defSp);
@@ -653,8 +675,8 @@ export class BattleScene extends Phaser.Scene {
         const kdir = player === 1 ? 1 : -1;
         this.tweens.add({ targets: defSp, x: defSp.x + kdir * 28, duration: 75, yoyo: true });
         this.tweens.add({
-          targets: atkSp, x: origX, duration: 190, ease: 'Cubic.easeOut',
-          onComplete: () => this.time.delayedCall(320, done),
+          targets: atkSp, x: origX, duration: 260, ease: 'Cubic.easeOut',
+          onComplete: () => this.time.delayedCall(600, done),
         });
       },
     });
@@ -685,7 +707,7 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.add({ targets: sp, scaleX: sp.scaleX * 1.12, scaleY: sp.scaleY * 1.12, duration: 200, yoyo: true });
     this.pop(sp.x, sp.y - 90, desc, isCurse ? '#dd88ff' : '#ffd700', 17);
     this.refreshStatusIcons();
-    this.time.delayedCall(820, done);
+    this.time.delayedCall(1400, done);
   }
 
   private aAtkDebuff(target: 1|2, done: () => void): void {
@@ -703,7 +725,7 @@ export class BattleScene extends Phaser.Scene {
     }
     this.tweens.add({ targets: sp, x: sp.x + 12, duration: 55, yoyo: true, repeat: 4 });
     this.pop(sp.x, sp.y - 90, 'こうげき↓', '#ff6666', 20);
-    this.time.delayedCall(720, done);
+    this.time.delayedCall(1200, done);
   }
 
   private aCounter(player: 1|2, damage: number, failed: boolean, done: () => void): void {
@@ -716,22 +738,22 @@ export class BattleScene extends Phaser.Scene {
       const fail = this.add.circle(sp.x, sp.y, 40, 0x444444, 0.5).setBlendMode(Phaser.BlendModes.ADD);
       this.tweens.add({ targets: fail, alpha: 0, scaleX: 2, scaleY: 2, duration: 600, onComplete: () => fail.destroy() });
       this.pop(sp.x, sp.y - 80, '不発…', '#888888', 22);
-      this.time.delayedCall(700, done);
+      this.time.delayedCall(1000, done);
       return;
     }
 
     this.setLog(`${mon.monsterDef.name} のカウンター! ${damage}ダメ返し!`);
     // Shield flash then burst toward opponent
     const shield = this.add.circle(sp.x, sp.y, 50, 0xff6600, 0.5).setBlendMode(Phaser.BlendModes.ADD);
-    this.tweens.add({ targets: shield, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 400, onComplete: () => shield.destroy() });
-    this.time.delayedCall(200, () => {
+    this.tweens.add({ targets: shield, scaleX: 1.6, scaleY: 1.6, alpha: 0, duration: 500, onComplete: () => shield.destroy() });
+    this.time.delayedCall(250, () => {
       this.fx.hitBurst(defSp.x, defSp.y - 30, 0xff6600, true);
       this.flashImg(defSp);
       this.fx.shake(0.01, 200);
       this.syncAllHpBars();
       this.pop(defSp.x, defSp.y - 85, `${damage}!`, '#ff8800', 36);
     });
-    this.time.delayedCall(780, done);
+    this.time.delayedCall(1200, done);
   }
 
   private aOhko(player: 1|2, succeeded: boolean, done: () => void): void {
@@ -744,27 +766,27 @@ export class BattleScene extends Phaser.Scene {
       this.fx.shake(0.015, 300);
       const dark = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0)
         .setDepth(500);
-      this.tweens.add({ targets: dark, alpha: 0.8, duration: 300, yoyo: true, onComplete: () => dark.destroy() });
+      this.tweens.add({ targets: dark, alpha: 0.8, duration: 400, yoyo: true, onComplete: () => dark.destroy() });
       this.syncAllHpBars();
-      this.time.delayedCall(600, done);
+      this.time.delayedCall(900, done);
       return;
     }
 
     this.setLog(`${mon.monsterDef.name} の漆黒のつるぎ! 一撃!`);
     // Dark explosion
     const dark = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0).setDepth(500);
-    this.tweens.add({ targets: dark, alpha: 0.95, duration: 180 });
-    this.time.delayedCall(180, () => {
+    this.tweens.add({ targets: dark, alpha: 0.95, duration: 280 });
+    this.time.delayedCall(280, () => {
       this.fx.hitBurst(defSp.x, defSp.y - 30, 0x440088, true);
       this.fx.shake(0.02, 350);
       this.syncAllHpBars();
       this.pop(defSp.x, defSp.y - 85, '一撃!!', '#cc44ff', 48);
-      this.tweens.add({ targets: dark, alpha: 0, duration: 400, delay: 200, onComplete: () => dark.destroy() });
+      this.tweens.add({ targets: dark, alpha: 0, duration: 600, delay: 400, onComplete: () => dark.destroy() });
       // Self damage flash
       this.tweens.add({ targets: atkSp, alpha: 0.4, duration: 100, yoyo: true, repeat: 2 });
       this.pop(atkSp.x, atkSp.y - 70, '-100', '#ff8888', 20);
     });
-    this.time.delayedCall(900, done);
+    this.time.delayedCall(1500, done);
   }
 
   private aStatusApply(target: 1|2, statusType: StatusEffectType, done: () => void): void {
@@ -779,9 +801,9 @@ export class BattleScene extends Phaser.Scene {
     const [label, color] = labels[statusType] ?? [`${statusType}!`, 0xffffff];
     this.pop(sp.x, sp.y - 90, label, `#${color.toString(16).padStart(6,'0')}`, 22);
     const ring = this.add.circle(sp.x, sp.y, 44, color, 0.35).setBlendMode(Phaser.BlendModes.ADD);
-    this.tweens.add({ targets: ring, scaleX: 2, scaleY: 2, alpha: 0, duration: 600, onComplete: () => ring.destroy() });
+    this.tweens.add({ targets: ring, scaleX: 2, scaleY: 2, alpha: 0, duration: 900, onComplete: () => ring.destroy() });
     this.refreshStatusIcons();
-    this.time.delayedCall(600, done);
+    this.time.delayedCall(1000, done);
   }
 
   private aStatusTick(player: 1|2, statusType: StatusEffectType, damage: number, done: () => void): void {
@@ -797,7 +819,7 @@ export class BattleScene extends Phaser.Scene {
       this.pop(sp.x, sp.y - 70, `-${damage}`, col, 20);
       this.syncAllHpBars();
     }
-    this.time.delayedCall(560, done);
+    this.time.delayedCall(900, done);
   }
 
   private aConditional(player: 1|2, damage: number, dodged: boolean, done: () => void): void {
@@ -821,7 +843,7 @@ export class BattleScene extends Phaser.Scene {
     this.fx.shake(0.01, 200);
     this.pop(defSp.x, defSp.y - 88, `${damage}!`, '#d070ff', 42);
     this.syncAllHpBars();
-    this.time.delayedCall(720, done);
+    this.time.delayedCall(1100, done);
   }
 
   private aFaint(player: 1|2, done: () => void): void {
@@ -830,8 +852,8 @@ export class BattleScene extends Phaser.Scene {
     this.setLog(`${mon.monsterDef.name} は たおれた!`);
     this.syncAllHpBars();
     this.tweens.add({
-      targets: sp, alpha: 0, y: sp.y + 65, duration: 580, ease: 'Cubic.easeIn',
-      onComplete: () => this.time.delayedCall(220, done),
+      targets: sp, alpha: 0, y: sp.y + 80, duration: 800, ease: 'Cubic.easeIn',
+      onComplete: () => this.time.delayedCall(450, done),
     });
   }
 
@@ -919,29 +941,31 @@ export class BattleScene extends Phaser.Scene {
         if (!btn.enabled || this.phase !== 'forcedAttack') return;
         const moveId = mon.monsterDef.moveIds[i];
         if (!moveId || !this.engine.isMoveReady(mon, moveId)) return;
-        this.setMyAction({ type: 'move', moveId });
-        this.bonusP1Action = this.p1Action;
-        this.bonusP2Action = this.p2Action ?? this.bonusP2Action ?? { type: 'none' };
+        if (this.localPlayer === 1) {
+          this.bonusP1Action = { type: 'move', moveId };
+        } else {
+          this.bonusP2Action = { type: 'move', moveId };
+        }
         this.disableAllBtns();
         this.execBonusTurn();
       });
     });
 
     this.timerEvent?.remove();
-    this.timerVal = 10;
-    this.timerText.setText('10').setStyle({ color: '#ffe066' });
-    this.timerBar.setFillStyle(0xffe066); this.timerBar.width = GAME_WIDTH * 0.5;
+    this.timerVal = 20;
+    this.timerText.setText('20').setStyle({ color: '#ffe066' });
+    this.timerBar.setFillStyle(0xffe066); this.timerBar.width = GAME_WIDTH * (20 / 60);
     this.timerEvent = this.time.addEvent({
-      delay: 1000, repeat: 9,
+      delay: 1000, repeat: 19,
       callback: () => {
         this.timerVal--;
         this.timerText.setText(`${this.timerVal}`);
-        this.timerBar.width = GAME_WIDTH * (this.timerVal / 20);
+        this.timerBar.width = GAME_WIDTH * (this.timerVal / 60);
         if (this.timerVal <= 0 && this.phase === 'forcedAttack') {
           this.timerEvent?.remove();
           this.disableAllBtns();
-          this.bonusP1Action = { type: 'none' };
-          this.bonusP2Action = this.mode === 'quest' ? (this.bonusP2Action ?? { type: 'none' }) : { type: 'none' };
+          if (this.localPlayer === 1) this.bonusP1Action = { type: 'none' };
+          else this.bonusP2Action = { type: 'none' };
           this.execBonusTurn();
         }
       },
@@ -1202,30 +1226,70 @@ export class BattleScene extends Phaser.Scene {
   // ── Status icon bar ───────────────────────────────────────────────────
 
   private buildStatusIcons(): void {
-    for (let i = 0; i < 5; i++) {
-      this.p1StatusIcons.push(this.add.text(PLAYER_HP_X + i * 26, PLAYER_HP_Y + 28, '', {
-        fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#ffffff',
-      }).setDepth(62));
-      this.p2StatusIcons.push(this.add.text(ENEMY_HP_X + i * 26, ENEMY_HP_Y + 28, '', {
-        fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#ffffff',
-      }).setDepth(62));
-    }
+    const makeSet = (
+      baseX: number, baseY: number,
+      list: Phaser.GameObjects.Text[], typeList: string[],
+    ) => {
+      for (let i = 0; i < 5; i++) {
+        typeList.push('');
+        const ic = this.add.text(baseX + i * 30, baseY, '', {
+          fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffffff',
+        }).setDepth(62).setInteractive({ useHandCursor: true });
+
+        let holdTimer: Phaser.Time.TimerEvent | undefined;
+        let tip: Phaser.GameObjects.Container | undefined;
+        const hideTip = () => { tip?.destroy(); tip = undefined; };
+        ic.on('pointerdown', () => {
+          holdTimer = this.time.delayedCall(350, () => {
+            const st = typeList[i];
+            if (!st) return;
+            const desc = STATUS_DESCS[st] ?? st;
+            hideTip();
+            tip = this.showStatusTip(ic.x, baseY < 100 ? ic.y + 60 : ic.y - 80, desc);
+          });
+        });
+        ic.on('pointerup', () => { holdTimer?.remove(); holdTimer = undefined; hideTip(); });
+        ic.on('pointerout', () => { holdTimer?.remove(); holdTimer = undefined; hideTip(); });
+        list.push(ic);
+      }
+    };
+    makeSet(PLAYER_HP_X, PLAYER_HP_Y + 28, this.p1StatusIcons, this.p1StatusTypes);
+    makeSet(ENEMY_HP_X, ENEMY_HP_Y + 28, this.p2StatusIcons, this.p2StatusTypes);
+  }
+
+  private showStatusTip(iconX: number, iconY: number, desc: string): Phaser.GameObjects.Container {
+    const cX = Phaser.Math.Clamp(iconX, 150, GAME_WIDTH - 150);
+    const cY = Phaser.Math.Clamp(iconY, 50, PANEL_Y - 50);
+    const c = this.add.container(cX, cY).setDepth(500);
+    const lines = desc.split('\n');
+    const bg = this.add.rectangle(0, 0, 220, 22 + lines.length * 20, 0x0d0b1a, 0.92)
+      .setStrokeStyle(1, 0x9be7ff);
+    const txt = this.add.text(0, 0, desc, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '13px', color: '#ffffff',
+      align: 'center', lineSpacing: 4,
+    }).setOrigin(0.5);
+    c.add([bg, txt]);
+    return c;
   }
 
   private refreshStatusIcons(): void {
     const icons: Record<string, string> = {
       burn: '🔥', paralyze: '⚡', poison: '☠', confuse: '😵', bind: '🔒',
-      critBoost: '✨', atkDebuffOnOpponent: '⬇', damageBoostSelf: '💥',
+      critBoost: '✨', atkDebuffOnOpponent: '⬇', counterReady: '🛡', counterFailed: '🔗',
     };
-    const fillIcons = (team: BattleMonster[], list: Phaser.GameObjects.Text[]) => {
-      const activeEffects = team
-        .flatMap(m => m.statusEffects.filter((se: StatusEffect) => se.delay === 0 && se.turnsLeft !== 0))
-        .map(se => icons[se.type])
-        .filter(Boolean);
-      list.forEach((t, i) => t.setText(activeEffects[i] ?? ''));
+    const fillIcons = (
+      team: BattleMonster[], list: Phaser.GameObjects.Text[], typeList: string[],
+    ) => {
+      const active = team
+        .flatMap(m => m.statusEffects.filter((se: StatusEffect) => se.delay === 0 && se.turnsLeft !== 0));
+      list.forEach((t, i) => {
+        const se = active[i];
+        t.setText(se ? (icons[se.type] ?? '') : '');
+        typeList[i] = se?.type ?? '';
+      });
     };
-    fillIcons([this.engine.p1Active], this.p1StatusIcons);
-    fillIcons([this.engine.p2Active], this.p2StatusIcons);
+    fillIcons([this.engine.p1Active], this.p1StatusIcons, this.p1StatusTypes);
+    fillIcons([this.engine.p2Active], this.p2StatusIcons, this.p2StatusTypes);
   }
 
   // ── Network message handling ──────────────────────────────────────────

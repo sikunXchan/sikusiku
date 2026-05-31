@@ -22,17 +22,32 @@ export function randomIVs(): IVs {
 function defaultSave(): GameSave {
   return {
     ownedMonsters: [
-      { uid: generateUid(), defId: 'chakun', ivs: randomIVs() },
-      { uid: generateUid(), defId: 'shikun', ivs: randomIVs() },
-      { uid: generateUid(), defId: 'lily', ivs: randomIVs() },
+      { uid: generateUid(), defId: 'chakun',   ivs: randomIVs() },
+      { uid: generateUid(), defId: 'shikun',   ivs: randomIVs() },
+      { uid: generateUid(), defId: 'lily',     ivs: randomIVs() },
+      { uid: generateUid(), defId: 'medama',   ivs: randomIVs() },
+      { uid: generateUid(), defId: 'darkking', ivs: randomIVs() },
     ],
   };
+}
+
+function migrateSave(save: GameSave): GameSave {
+  const additions: string[] = ['medama', 'darkking'];
+  let changed = false;
+  for (const defId of additions) {
+    if (!save.ownedMonsters.some(m => m.defId === defId)) {
+      save.ownedMonsters.push({ uid: generateUid(), defId, ivs: randomIVs() });
+      changed = true;
+    }
+  }
+  if (changed) persistSave(save);
+  return save;
 }
 
 export function loadSave(): GameSave {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) return JSON.parse(raw) as GameSave;
+    if (raw) return migrateSave(JSON.parse(raw) as GameSave);
   } catch {
     // ignore
   }
