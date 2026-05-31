@@ -59,6 +59,11 @@ export class BattleEngine {
     return !this.hasStatus(monster, 'bind') && !this.hasStatus(monster, 'counterFailed');
   }
 
+  private extractPositiveEffects(monster: BattleMonster): StatusEffect[] {
+    const positive = new Set<StatusEffectType>(['critBoost', 'healPercent', 'shield', 'damageBoostSelf']);
+    return monster.statusEffects.filter(se => positive.has(se.type) && se.delay === 0);
+  }
+
   private clearSwitchStatus(monster: BattleMonster): void {
     const toClear = new Set<StatusEffectType>([
       'burn', 'paralyze', 'poison', 'confuse', 'bind',
@@ -90,14 +95,26 @@ export class BattleEngine {
     // Switches first
     if (p1Action.type === 'switch' && this.canSwitch(this.p1Active)) {
       const from = this.p1ActiveIdx;
+      const inherited1 = this.extractPositiveEffects(this.p1Team[from]);
       this.clearSwitchStatus(this.p1Team[from]);
       this.p1ActiveIdx = p1Action.targetIndex;
+      for (const se of inherited1) {
+        if (!this.hasStatus(this.p1Team[this.p1ActiveIdx], se.type)) {
+          this.p1Team[this.p1ActiveIdx].statusEffects.push({ ...se, delay: 1 });
+        }
+      }
       events.push({ type: 'switch', player: 1, fromIdx: from, toIdx: p1Action.targetIndex });
     }
     if (p2Action.type === 'switch' && this.canSwitch(this.p2Active)) {
       const from = this.p2ActiveIdx;
+      const inherited2 = this.extractPositiveEffects(this.p2Team[from]);
       this.clearSwitchStatus(this.p2Team[from]);
       this.p2ActiveIdx = p2Action.targetIndex;
+      for (const se of inherited2) {
+        if (!this.hasStatus(this.p2Team[this.p2ActiveIdx], se.type)) {
+          this.p2Team[this.p2ActiveIdx].statusEffects.push({ ...se, delay: 1 });
+        }
+      }
       events.push({ type: 'switch', player: 2, fromIdx: from, toIdx: p2Action.targetIndex });
     }
 

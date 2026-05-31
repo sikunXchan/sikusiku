@@ -288,10 +288,21 @@ export class BattleScene extends Phaser.Scene {
     }).setDepth(200);
 
     const wInfo = WEATHER_INFO[this.engine.weather];
-    this.add.text(28, 32, `${wInfo.icon} ${wInfo.name}`, {
+    const weatherText = this.add.text(28, 32, `${wInfo.icon} ${wInfo.name}`, {
       fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: wInfo.color,
       fontStyle: 'bold',
-    }).setDepth(200);
+    }).setDepth(200).setInteractive({ useHandCursor: true });
+
+    let wHoldTimer: Phaser.Time.TimerEvent | undefined;
+    let wTip: Phaser.GameObjects.Container | undefined;
+    const hideWTip = () => { wTip?.destroy(); wTip = undefined; };
+    weatherText.on('pointerdown', () => {
+      wHoldTimer = this.time.delayedCall(350, () => {
+        wTip = this.showStatusTip(weatherText.x + 80, weatherText.y + 52, wInfo.desc);
+      });
+    });
+    weatherText.on('pointerup', () => { wHoldTimer?.remove(); wHoldTimer = undefined; hideWTip(); });
+    weatherText.on('pointerout', () => { wHoldTimer?.remove(); wHoldTimer = undefined; hideWTip(); });
   }
 
   private buildLog(): void {
@@ -365,8 +376,8 @@ export class BattleScene extends Phaser.Scene {
         holdTimer?.remove(); holdTimer = undefined;
         if (showingTooltip) {
           this.hideMoveTooltip(); showingTooltip = false;
-        } else if (btn.enabled && this.phase === 'selecting' && !this.p1Action) {
-          this.onMove(idx);
+        } else if (btn.enabled && this.phase === 'selecting' && !this.myAction) {
+          this.confirmMove(moveId);
         }
       });
     });
@@ -393,7 +404,7 @@ export class BattleScene extends Phaser.Scene {
     this.swContainer.on('pointerover', () => { if (this.swEnabled) bg.setAlpha(0.6); });
     this.swContainer.on('pointerout', () => { if (this.swEnabled) bg.setAlpha(0.35); });
     this.swContainer.on('pointerdown', () => {
-      if (this.swEnabled && this.phase === 'selecting' && !this.p1Action) this.onSwitch();
+      if (this.swEnabled && this.phase === 'selecting' && !this.myAction) this.onSwitch();
     });
   }
 
@@ -487,13 +498,46 @@ export class BattleScene extends Phaser.Scene {
     }
   }
 
-  private onMove(idx: number): void {
+  private confirmMove(moveId: string): void {
     if (this.phase !== 'selecting' || this.myAction) return;
-    const moveId = this.myActive.monsterDef.moveIds[idx];
-    if (!moveId || !this.engine.isMoveReady(this.myActive, moveId)) return;
-    this.setMyAction({ type: 'move', moveId });
-    this.markReady();
-    this.checkReady();
+    if (!this.engine.isMoveReady(this.myActive, moveId)) return;
+    const move = getMove(moveId);
+    const D = 700;
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.5)
+      .setDepth(D).setInteractive();
+    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(D + 1);
+    const w = 320;
+    panel.add(this.add.rectangle(0, 0, w, 140, 0x1a1530).setStrokeStyle(2, 0x5a4cd0));
+    panel.add(this.add.text(0, -38, `【${move.name}】を使いますか?`, {
+      fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#ffffff', fontStyle: 'bold',
+      wordWrap: { width: w - 20 }, align: 'center',
+    }).setOrigin(0.5));
+
+    const yesBg = this.add.rectangle(-78, 28, 130, 44, 0x1a3322).setStrokeStyle(1, 0x44aa66);
+    const yesLabel = this.add.text(-78, 28, 'はい', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#88ffaa', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    yesBg.setInteractive({ useHandCursor: true });
+    yesBg.on('pointerdown', () => {
+      overlay.destroy(); panel.destroy();
+      if (this.phase !== 'selecting' || this.myAction) return;
+      this.setMyAction({ type: 'move', moveId });
+      this.markReady();
+      this.checkReady();
+    });
+    yesBg.on('pointerover', () => yesBg.setFillStyle(0x254433));
+    yesBg.on('pointerout', () => yesBg.setFillStyle(0x1a3322));
+
+    const noBg = this.add.rectangle(78, 28, 130, 44, 0x331a1a).setStrokeStyle(1, 0xaa4444);
+    const noLabel = this.add.text(78, 28, 'やめる', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#ff8888', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    noBg.setInteractive({ useHandCursor: true });
+    noBg.on('pointerdown', () => { overlay.destroy(); panel.destroy(); });
+    noBg.on('pointerover', () => noBg.setFillStyle(0x443333));
+    noBg.on('pointerout', () => noBg.setFillStyle(0x331a1a));
+
+    panel.add([yesBg, yesLabel, noBg, noLabel]);
   }
 
   private onSwitch(): void {
@@ -1012,7 +1056,13 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
 
-    if (p1Fainted) {
+    if (p1Fainted && p2Fainted && this.mode === 'quest') {
+      // Both fainted simultaneously: AI switches p2 first, then player picks
+      const idx = this.ai.chooseForcedSwitch(this.engine.p2Team, this.engine.p2ActiveIdx, this.engine, 2);
+      this.engine.doForcedSwitch(2, idx);
+      this.resetSprites(); this.syncAllHpBars();
+      this.doForcedSwitch(1);
+    } else if (p1Fainted) {
       this.doForcedSwitch(1);
     } else if (p2Fainted) {
       if (this.mode === 'quest') {
@@ -1123,7 +1173,11 @@ export class BattleScene extends Phaser.Scene {
   private execBonusTurn(): void {
     this.timerEvent?.remove();
     const p1A = this.bonusP1Action ?? { type: 'none' };
-    const p2A = this.bonusP2Action ?? { type: 'none' };
+    let p2A = this.bonusP2Action ?? { type: 'none' };
+    if (this.mode === 'quest' && p2A.type !== 'move') {
+      const moves = this.engine.p2Active.monsterDef.moveIds;
+      p2A = moves.length > 0 ? { type: 'move', moveId: moves[Math.floor(Math.random() * moves.length)] } : { type: 'none' };
+    }
     this.phase = 'animating';
     this.eventQueue = this.engine.resolveBonusTurn(
       this.localPlayer === 1 ? p1A : p2A,
@@ -1242,10 +1296,10 @@ export class BattleScene extends Phaser.Scene {
       .setDepth(600).setInteractive();
     const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(601);
 
-    const panelBg = this.add.rectangle(0, 0, panelW, 200, 0x1a1530);
+    const panelBg = this.add.rectangle(0, 0, panelW, 240, 0x1a1530);
     panelBg.setStrokeStyle(2, forced ? 0xff4444 : 0x5a4cd0);
     panel.add(panelBg);
-    panel.add(this.add.text(0, -80, forced ? 'つぎのモンスターを選べ!' : '交代するモンスターを選べ', {
+    panel.add(this.add.text(0, -100, forced ? 'つぎのモンスターを選べ!' : '交代するモンスターを選べ', {
       fontFamily: 'system-ui, sans-serif', fontSize: '15px',
       color: forced ? '#ff6666' : '#ffffff', fontStyle: 'bold',
     }).setOrigin(0.5));
@@ -1276,13 +1330,15 @@ export class BattleScene extends Phaser.Scene {
     });
 
     if (!forced) {
-      const cancel = this.add.text(0, 82, 'キャンセル', {
-        fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#888888',
-      }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-      cancel.on('pointerdown', () => { overlay.destroy(); panel.destroy(); onCancel(); });
-      cancel.on('pointerover', () => cancel.setStyle({ color: '#ffffff' }));
-      cancel.on('pointerout', () => cancel.setStyle({ color: '#888888' }));
-      panel.add(cancel);
+      const cancelBg = this.add.rectangle(0, 92, 200, 44, 0x222233).setStrokeStyle(2, 0x5566aa);
+      const cancelLabel = this.add.text(0, 92, 'キャンセル', {
+        fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#aaaacc', fontStyle: 'bold',
+      }).setOrigin(0.5);
+      cancelBg.setInteractive({ useHandCursor: true });
+      cancelBg.on('pointerdown', () => { overlay.destroy(); panel.destroy(); onCancel(); });
+      cancelBg.on('pointerover', () => cancelBg.setFillStyle(0x333355));
+      cancelBg.on('pointerout', () => cancelBg.setFillStyle(0x222233));
+      panel.add([cancelBg, cancelLabel]);
     }
   }
 
