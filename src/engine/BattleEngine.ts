@@ -54,6 +54,15 @@ export class BattleEngine {
     return !this.hasStatus(monster, 'bind') && !this.hasStatus(monster, 'counterFailed');
   }
 
+  private clearSwitchStatus(monster: BattleMonster): void {
+    const toClear = new Set<StatusEffectType>([
+      'burn', 'paralyze', 'poison', 'confuse', 'bind',
+      'atkDown', 'damageTakenBoostSelf', 'damageBoostSelf',
+      'counterFailed', 'atkDebuffOnOpponent',
+    ]);
+    monster.statusEffects = monster.statusEffects.filter(se => !toClear.has(se.type));
+  }
+
   availableMoves(monster: BattleMonster): string[] {
     return monster.monsterDef.moveIds.filter(id => this.isMoveReady(monster, id));
   }
@@ -76,11 +85,13 @@ export class BattleEngine {
     // Switches first
     if (p1Action.type === 'switch' && this.canSwitch(this.p1Active)) {
       const from = this.p1ActiveIdx;
+      this.clearSwitchStatus(this.p1Team[from]);
       this.p1ActiveIdx = p1Action.targetIndex;
       events.push({ type: 'switch', player: 1, fromIdx: from, toIdx: p1Action.targetIndex });
     }
     if (p2Action.type === 'switch' && this.canSwitch(this.p2Active)) {
       const from = this.p2ActiveIdx;
+      this.clearSwitchStatus(this.p2Team[from]);
       this.p2ActiveIdx = p2Action.targetIndex;
       events.push({ type: 'switch', player: 2, fromIdx: from, toIdx: p2Action.targetIndex });
     }
@@ -225,6 +236,10 @@ export class BattleEngine {
     if (p2Attacking && p2Action.type === 'move') {
       this.processMoveEffects(p2, p1, p2AtkSnap, p2Action.moveId, events, 2, p1Attacking);
     }
+
+    // Clear this-turn dodge flags
+    p1.dodgingThisTurn = false;
+    p2.dodgingThisTurn = false;
 
     if (p1.fainted) events.push({ type: 'faint', player: 1 });
     if (p2.fainted) events.push({ type: 'faint', player: 2 });

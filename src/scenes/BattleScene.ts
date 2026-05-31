@@ -65,10 +65,13 @@ const STATUS_DESCS: Record<string, string> = {
   bind:                '🔒 そくばく\n1ターン 行動・交代不可',
   critBoost:           '✨ 急所の呪い\n必ず急所に当たる',
   atkDebuffOnOpponent: '⬇ こうげき低下\n攻撃力が下がっている',
+  atkDown:             '⬇ ATK低下\n攻撃力が下がっている',
   counterReady:        '🛡 カウンター準備中\n次の攻撃を跳ね返す',
   counterFailed:       '🔗 カウンター失敗\n次のターン行動不可',
   shield:              '🛡 シールド\n50ダメまで吸収。割れると25反射',
   healPercent:         '💚 回復中\n毎ターン最大HP10%回復',
+  damageBoostSelf:     '🥁 与ダメ増\n次の攻撃ダメージが上昇',
+  damageTakenBoostSelf:'⚠ 被ダメ増\n受けるダメージが上昇',
 };
 
 export class BattleScene extends Phaser.Scene {
@@ -1321,7 +1324,7 @@ export class BattleScene extends Phaser.Scene {
       baseX: number, baseY: number,
       list: Phaser.GameObjects.Text[], typeList: string[],
     ) => {
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 7; i++) {
         typeList.push('');
         const ic = this.add.text(baseX + i * 30, baseY, '', {
           fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffffff',
@@ -1366,8 +1369,10 @@ export class BattleScene extends Phaser.Scene {
   private refreshStatusIcons(): void {
     const icons: Record<string, string> = {
       burn: '🔥', paralyze: '⚡', poison: '☠', confuse: '😵', bind: '🔒',
-      critBoost: '✨', atkDebuffOnOpponent: '⬇', counterReady: '🛡', counterFailed: '🔗',
+      critBoost: '✨', atkDebuffOnOpponent: '⬇', atkDown: '⬇',
+      counterReady: '🛡', counterFailed: '🔗',
       shield: '🔵', healPercent: '💚',
+      damageBoostSelf: '🥁', damageTakenBoostSelf: '⚠',
     };
     const fillIcons = (
       team: BattleMonster[], list: Phaser.GameObjects.Text[], typeList: string[],
