@@ -265,12 +265,16 @@ export class BattleEngine {
     const p1AtkSnap = this.snapshotAtk(p1);
     const p2AtkSnap = this.snapshotAtk(p2);
 
+    // Use turn-1 so bonus turn cooldowns match regular-turn timing
+    // (resolveTurn already incremented turn before the faint events)
+    this.turn--;
     if (p1Attacking && p1Action.type === 'move') {
       this.processMoveEffects(p1, p2, p1AtkSnap, p1Action.moveId, events, 1, p2Attacking);
     }
     if (p2Attacking && p2Action.type === 'move') {
       this.processMoveEffects(p2, p1, p2AtkSnap, p2Action.moveId, events, 2, p1Attacking);
     }
+    this.turn++;
 
     // Clear this-turn dodge flags
     p1.dodgingThisTurn = false;

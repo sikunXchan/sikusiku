@@ -365,12 +365,8 @@ export class TeamSelectScene extends Phaser.Scene {
     const selectedTeam = this.selectedIndices.map(i => this.sceneData.save.ownedMonsters[i]);
 
     if (this.sceneData.mode === 'quest') {
-      const cpuTeam: OwnedMonster[] = Array.from({ length: TEAM_SIZE }, () => ({
-        uid: generateUid(),
-        defId: MONSTER_IDS[Math.floor(Math.random() * MONSTER_IDS.length)],
-        ivs: randomIVs(),
-      }));
-      this.scene.start('Battle', { mode: 'quest', p1Team: selectedTeam, p2Team: cpuTeam });
+      this.showTargetSelection(selectedTeam);
+      return;
 
     } else if (this.sceneData.mode === 'network') {
       this.confirmNetworkTeam(selectedTeam);
@@ -382,6 +378,76 @@ export class TeamSelectScene extends Phaser.Scene {
     } else {
       this.scene.start('Battle', { mode: 'pvp', p1Team: this.sceneData.p1Team!, p2Team: selectedTeam });
     }
+  }
+
+  private showTargetSelection(playerTeam: OwnedMonster[]): void {
+    const D = 700;
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.82)
+      .setDepth(D).setInteractive();
+    const panelW = 860;
+    const panelH = 280;
+    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(D + 1);
+    panel.add(this.add.rectangle(0, 0, panelW, panelH, 0x0f0c1e).setStrokeStyle(2, 0xffe066));
+    panel.add(this.add.text(0, -panelH / 2 + 22, '狙うモンスターを選んでください', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#ffe066', fontStyle: 'bold',
+    }).setOrigin(0.5));
+    panel.add(this.add.text(0, -panelH / 2 + 46, '(選ばない場合はランダム)', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#888888',
+    }).setOrigin(0.5));
+
+    const cols = Math.min(MONSTER_IDS.length, 7);
+    const cardW = 112;
+    const startOff = -((cols - 1) * cardW) / 2;
+
+    const launch = (targetDefId: string | null) => {
+      overlay.destroy(); panel.destroy();
+      const cpuTeam: OwnedMonster[] = [];
+      if (targetDefId) {
+        cpuTeam.push({ uid: generateUid(), defId: targetDefId, ivs: randomIVs() });
+      }
+      while (cpuTeam.length < TEAM_SIZE) {
+        const id = MONSTER_IDS[Math.floor(Math.random() * MONSTER_IDS.length)];
+        cpuTeam.push({ uid: generateUid(), defId: id, ivs: randomIVs() });
+      }
+      this.scene.start('Battle', { mode: 'quest', p1Team: playerTeam, p2Team: cpuTeam });
+    };
+
+    MONSTER_IDS.forEach((defId, ti) => {
+      const def = getMonsterDef(defId);
+      const bx = startOff + ti * cardW;
+      const by = 20;
+
+      const bg = this.add.rectangle(bx, by, cardW - 8, 160, 0x1a1842).setStrokeStyle(2, 0x5a4cd0);
+      bg.setInteractive({ useHandCursor: true });
+
+      const nameT = this.add.text(bx, by + 60, def.name, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '12px', color: '#cccccc', fontStyle: 'bold',
+        wordWrap: { width: cardW - 12 }, align: 'center',
+      }).setOrigin(0.5);
+
+      panel.add([bg, nameT]);
+
+      if (this.textures.exists(def.frontSprite)) {
+        const img = this.add.image(bx, by - 20, def.frontSprite);
+        img.setScale(Math.min(70 / img.width, 60 / img.height));
+        panel.add(img);
+      }
+
+      bg.on('pointerover', () => { bg.setFillStyle(0x2a2860); bg.setStrokeStyle(2, 0xffe066); });
+      bg.on('pointerout', () => { bg.setFillStyle(0x1a1842); bg.setStrokeStyle(2, 0x5a4cd0); });
+      bg.on('pointerdown', () => launch(defId));
+    });
+
+    // Skip button
+    const skipBg = this.add.rectangle(0, panelH / 2 - 28, 160, 36, 0x222233).setStrokeStyle(1, 0x555566);
+    const skipLabel = this.add.text(0, panelH / 2 - 28, 'ランダムでいい', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#888888',
+    }).setOrigin(0.5);
+    skipBg.setInteractive({ useHandCursor: true });
+    skipBg.on('pointerover', () => { skipBg.setFillStyle(0x333355); skipLabel.setStyle({ color: '#aaaaaa' }); });
+    skipBg.on('pointerout', () => { skipBg.setFillStyle(0x222233); skipLabel.setStyle({ color: '#888888' }); });
+    skipBg.on('pointerdown', () => launch(null));
+    panel.add([skipBg, skipLabel]);
   }
 
   private confirmNetworkTeam(myTeam: OwnedMonster[]): void {
