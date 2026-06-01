@@ -154,8 +154,10 @@ export class TitleScene extends Phaser.Scene {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,application/json';
+    input.style.display = 'none';
     input.onchange = () => {
       const file = input.files?.[0];
+      document.body.removeChild(input);
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
@@ -174,7 +176,6 @@ export class TitleScene extends Phaser.Scene {
     };
     document.body.appendChild(input);
     input.click();
-    document.body.removeChild(input);
   }
 
   private startMode(mode: 'quest' | 'survival'): void {
