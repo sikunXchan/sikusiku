@@ -151,21 +151,67 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private loadSaveFromFile(): void {
+    // PhaserのイベントはrequestAnimationFrame経由のため非信頼扱いになり
+    // input.click()でファイルピッカーが開けない。
+    // ネイティブDOM <label> + <input> で回避する。
+    const wrap = document.createElement('div');
+    wrap.style.cssText = [
+      'position:fixed', 'inset:0', 'z-index:9999',
+      'display:flex', 'align-items:center', 'justify-content:center',
+      'background:rgba(0,0,0,0.65)',
+    ].join(';');
+
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.json,application/json';
+    input.id = '__sikusiku_file';
     input.style.display = 'none';
+
+    const label = document.createElement('label');
+    label.htmlFor = '__sikusiku_file';
+    label.textContent = '📥 JSONファイルを選択';
+    label.style.cssText = [
+      'display:block', 'padding:16px 36px',
+      'background:#1a2235', 'color:#99bbff',
+      'border:2px solid #4466aa', 'border-radius:8px',
+      'font-size:16px', 'cursor:pointer',
+      'font-family:system-ui,sans-serif',
+    ].join(';');
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'キャンセル';
+    cancelBtn.style.cssText = [
+      'display:block', 'margin-top:12px', 'padding:8px 24px',
+      'background:transparent', 'color:#888888',
+      'border:1px solid #555555', 'border-radius:6px',
+      'font-size:14px', 'cursor:pointer',
+      'font-family:system-ui,sans-serif',
+    ].join(';');
+
+    const col = document.createElement('div');
+    col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:0';
+    col.appendChild(label);
+    col.appendChild(cancelBtn);
+    wrap.appendChild(input);
+    wrap.appendChild(col);
+    document.body.appendChild(wrap);
+
+    const cleanup = () => { if (wrap.parentNode) document.body.removeChild(wrap); };
+
+    cancelBtn.onclick = cleanup;
+    wrap.onclick = (e) => { if (e.target === wrap) cleanup(); };
+
     input.onchange = () => {
       const file = input.files?.[0];
-      document.body.removeChild(input);
+      cleanup();
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
         try {
           const save = JSON.parse(reader.result as string) as GameSave;
           if (!Array.isArray(save.ownedMonsters)) throw new Error('invalid');
-          if (save.winCount  === undefined) save.winCount  = 0;
-          if (save.nikukyu   === undefined) save.nikukyu   = 0;
+          if (save.winCount === undefined) save.winCount = 0;
+          if (save.nikukyu === undefined) save.nikukyu  = 0;
           persistSave(save);
           this.scene.restart();
         } catch {
@@ -174,8 +220,6 @@ export class TitleScene extends Phaser.Scene {
       };
       reader.readAsText(file);
     };
-    document.body.appendChild(input);
-    input.click();
   }
 
   private startMode(mode: 'quest' | 'survival'): void {
