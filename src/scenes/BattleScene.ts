@@ -646,22 +646,29 @@ export class BattleScene extends Phaser.Scene {
     const p1A = this.p1Action!;
     const p2A = this.p2Action!;
 
+    // My monster is always at PLAYER_X (left); opponent is always at ENEMY_X (right).
+    // Map actions to screen sides based on localPlayer perspective.
+    const myA        = this.localPlayer === 1 ? p1A : p2A;
+    const oppA       = this.localPlayer === 1 ? p2A : p1A;
+    const myPNum: 1|2  = this.localPlayer;
+    const oppPNum: 1|2 = this.localPlayer === 1 ? 2 : 1;
+
     const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0).setDepth(300);
     this.tweens.add({ targets: overlay, alpha: 0.62, duration: 250 });
 
-    const p1txt = this.add.text(80, GAME_HEIGHT / 2 + 14, this.actionStr(p1A, 1), {
+    const mytxt = this.add.text(80, GAME_HEIGHT / 2 + 14, this.actionStr(myA, myPNum), {
       fontFamily: 'system-ui, sans-serif', fontSize: '30px', color: '#66ccff',
       fontStyle: 'bold', stroke: '#000000', strokeThickness: 6,
     }).setOrigin(0, 0.5).setDepth(301).setAlpha(0);
-    this.tweens.add({ targets: p1txt, alpha: 1, duration: 340, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: mytxt, alpha: 1, duration: 340, ease: 'Back.easeOut' });
 
-    const p2txt = this.add.text(GAME_WIDTH - 80, GAME_HEIGHT / 2 - 14, this.actionStr(p2A, 2), {
+    const opptxt = this.add.text(GAME_WIDTH - 80, GAME_HEIGHT / 2 - 14, this.actionStr(oppA, oppPNum), {
       fontFamily: 'system-ui, sans-serif', fontSize: '30px', color: '#ff6b6b',
       fontStyle: 'bold', stroke: '#000000', strokeThickness: 6,
     }).setOrigin(1, 0.5).setDepth(301).setAlpha(0);
 
     this.tweens.add({
-      targets: p2txt, alpha: 1, duration: 340, ease: 'Back.easeOut', delay: 220,
+      targets: opptxt, alpha: 1, duration: 340, ease: 'Back.easeOut', delay: 220,
       onComplete: () => {
         const fight = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, 'バトル!!', {
           fontFamily: 'system-ui, sans-serif', fontSize: '62px', color: '#ffe066',
@@ -672,9 +679,9 @@ export class BattleScene extends Phaser.Scene {
           onComplete: () => {
             this.time.delayedCall(680, () => {
               this.tweens.add({
-                targets: [overlay, p1txt, p2txt, fight], alpha: 0, duration: 320,
+                targets: [overlay, mytxt, opptxt, fight], alpha: 0, duration: 320,
                 onComplete: () => {
-                  overlay.destroy(); p1txt.destroy(); p2txt.destroy(); fight.destroy();
+                  overlay.destroy(); mytxt.destroy(); opptxt.destroy(); fight.destroy();
                   this.execTurn(p1A, p2A);
                 },
               });
