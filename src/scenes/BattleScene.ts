@@ -143,6 +143,15 @@ export class BattleScene extends Phaser.Scene {
   private get myTeam(): BattleMonster[] {
     return this.localPlayer === 1 ? this.engine.p1Team : this.engine.p2Team;
   }
+  private get oppActive(): BattleMonster {
+    return this.localPlayer === 1 ? this.engine.p2Active : this.engine.p1Active;
+  }
+  private get oppActiveIdx(): number {
+    return this.localPlayer === 1 ? this.engine.p2ActiveIdx : this.engine.p1ActiveIdx;
+  }
+  private get oppTeam(): BattleMonster[] {
+    return this.localPlayer === 1 ? this.engine.p2Team : this.engine.p1Team;
+  }
   private get myAction(): BattleAction | undefined {
     return this.localPlayer === 1 ? this.p1Action : this.p2Action;
   }
@@ -231,8 +240,8 @@ export class BattleScene extends Phaser.Scene {
   // ── HP bars ───────────────────────────────────────────────────────────
 
   private buildHpBars(): void {
-    this.enemyHpUI = this.makeHpBar(ENEMY_HP_X, ENEMY_HP_Y, this.engine.p2Active, 0xff6b6b);
-    this.playerHpUI = this.makeHpBar(PLAYER_HP_X, PLAYER_HP_Y, this.engine.p1Active, 0x66ccff);
+    this.enemyHpUI  = this.makeHpBar(ENEMY_HP_X,  ENEMY_HP_Y,  this.oppActive, 0xff6b6b);
+    this.playerHpUI = this.makeHpBar(PLAYER_HP_X, PLAYER_HP_Y, this.myActive,  0x66ccff);
   }
 
   private makeHpBar(x: number, y: number, mon: BattleMonster, color: number): HpBarUI {
@@ -258,8 +267,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private syncAllHpBars(): void {
-    this.syncHpBar(this.engine.p2Active, this.enemyHpUI);
-    this.syncHpBar(this.engine.p1Active, this.playerHpUI);
+    this.syncHpBar(this.oppActive, this.enemyHpUI);
+    this.syncHpBar(this.myActive,  this.playerHpUI);
     this.refreshStatusIcons();
     this.refreshDots();
   }
@@ -273,17 +282,17 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private buildSprites(): void {
-    this.enemySprite = this.add.image(ENEMY_X, ENEMY_Y, this.engine.p2Active.monsterDef.frontSprite);
+    this.enemySprite  = this.add.image(ENEMY_X,  ENEMY_Y,  this.oppActive.monsterDef.frontSprite);
     this.fitSprite(this.enemySprite, ENEMY_MAX_W, ENEMY_MAX_H);
-    this.playerSprite = this.add.image(PLAYER_X, PLAYER_Y, this.engine.p1Active.monsterDef.backSprite);
+    this.playerSprite = this.add.image(PLAYER_X, PLAYER_Y, this.myActive.monsterDef.backSprite);
     this.fitSprite(this.playerSprite, PLAYER_MAX_W, PLAYER_MAX_H);
   }
 
   private resetSprites(): void {
-    this.enemySprite.setTexture(this.engine.p2Active.monsterDef.frontSprite)
+    this.enemySprite.setTexture(this.oppActive.monsterDef.frontSprite)
       .setAlpha(1).setPosition(ENEMY_X, ENEMY_Y).setAngle(0);
     this.fitSprite(this.enemySprite, ENEMY_MAX_W, ENEMY_MAX_H);
-    this.playerSprite.setTexture(this.engine.p1Active.monsterDef.backSprite)
+    this.playerSprite.setTexture(this.myActive.monsterDef.backSprite)
       .setAlpha(1).setPosition(PLAYER_X, PLAYER_Y).setAngle(0);
     this.fitSprite(this.playerSprite, PLAYER_MAX_W, PLAYER_MAX_H);
   }
@@ -428,30 +437,30 @@ export class BattleScene extends Phaser.Scene {
   // ── Team dots ─────────────────────────────────────────────────────────
 
   private buildTeamDots(): void {
-    // "自チーム" label + P1 dots (left group)
+    // "自チーム" label + my dots (left group)
     this.add.text(722, 9, '自チーム', {
       fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#66ccff',
     }).setDepth(200);
-    for (let i = 0; i < this.engine.p1Team.length; i++) {
+    for (let i = 0; i < this.myTeam.length; i++) {
       this.p1TeamDots.push(this.add.circle(760 + i * 16, 18, 7, 0x66ccff).setDepth(200));
     }
-    // "敵チーム" label + P2 dots (right group)
+    // "敵チーム" label + opp dots (right group)
     this.add.text(820, 9, '敵チーム', {
       fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#ff6b6b',
     }).setDepth(200);
-    for (let i = 0; i < this.engine.p2Team.length; i++) {
+    for (let i = 0; i < this.oppTeam.length; i++) {
       this.p2TeamDots.push(this.add.circle(858 + i * 16, 18, 7, 0xff6b6b).setDepth(200));
     }
   }
 
   private refreshDots(): void {
     this.p1TeamDots.forEach((d, i) => {
-      const m = this.engine.p1Team[i];
-      d.setFillStyle(m.fainted ? 0x333333 : i === this.engine.p1ActiveIdx ? 0xffffff : 0x66ccff);
+      const m = this.myTeam[i];
+      d.setFillStyle(m.fainted ? 0x333333 : i === this.myActiveIdx ? 0xffffff : 0x66ccff);
     });
     this.p2TeamDots.forEach((d, i) => {
-      const m = this.engine.p2Team[i];
-      d.setFillStyle(m.fainted ? 0x333333 : i === this.engine.p2ActiveIdx ? 0xffffff : 0xff6b6b);
+      const m = this.oppTeam[i];
+      d.setFillStyle(m.fainted ? 0x333333 : i === this.oppActiveIdx ? 0xffffff : 0xff6b6b);
     });
   }
 
@@ -1643,8 +1652,8 @@ export class BattleScene extends Phaser.Scene {
         typeList[i] = se?.type ?? '';
       });
     };
-    fillIcons([this.engine.p1Active], this.p1StatusIcons, this.p1StatusTypes);
-    fillIcons([this.engine.p2Active], this.p2StatusIcons, this.p2StatusTypes);
+    fillIcons([this.myActive],  this.p1StatusIcons, this.p1StatusTypes);
+    fillIcons([this.oppActive], this.p2StatusIcons, this.p2StatusTypes);
   }
 
   // ── Network message handling ──────────────────────────────────────────
