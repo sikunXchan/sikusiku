@@ -94,6 +94,7 @@ export class BattleScene extends Phaser.Scene {
   private localPlayer: 1 | 2 = 1;
 
   private phase: 'selecting' | 'revealing' | 'animating' | 'forcedSwitch' | 'forcedAttack' | 'gameOver' = 'selecting';
+  private inputLocked = false;
 
   private timerVal = 60;
   private timerEvent?: Phaser.Time.TimerEvent;
@@ -379,6 +380,7 @@ export class BattleScene extends Phaser.Scene {
         if (showingTooltip) { this.hideMoveTooltip(); showingTooltip = false; }
       });
       container.on('pointerdown', () => {
+        if (this.inputLocked) return;
         showingTooltip = false;
         holdTimer = this.time.delayedCall(400, () => {
           showingTooltip = true;
@@ -386,6 +388,7 @@ export class BattleScene extends Phaser.Scene {
         });
       });
       container.on('pointerup', () => {
+        if (this.inputLocked) return;
         holdTimer?.remove(); holdTimer = undefined;
         if (showingTooltip) {
           this.hideMoveTooltip(); showingTooltip = false;
@@ -417,6 +420,7 @@ export class BattleScene extends Phaser.Scene {
     this.swContainer.on('pointerover', () => { if (this.swEnabled) bg.setAlpha(0.6); });
     this.swContainer.on('pointerout', () => { if (this.swEnabled) bg.setAlpha(0.35); });
     this.swContainer.on('pointerdown', () => {
+      if (this.inputLocked) return;
       if (this.swEnabled && this.phase === 'selecting' && !this.myAction) this.onSwitch();
     });
   }
@@ -453,6 +457,30 @@ export class BattleScene extends Phaser.Scene {
 
   // ── Turn flow ─────────────────────────────────────────────────────────
 
+  private startInputCountdown(): void {
+    this.inputLocked = true;
+    const areaY = PANEL_Y + 10;
+    const areaH = GAME_HEIGHT - areaY;
+    const lockBg = this.add.rectangle(GAME_WIDTH / 2, areaY + areaH / 2, GAME_WIDTH, areaH, 0x000000, 0.50).setDepth(50);
+    const countTxt = this.add.text(GAME_WIDTH / 2, areaY + areaH / 2, '3', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '64px', color: '#ffffff',
+      fontStyle: 'bold', stroke: '#000000', strokeThickness: 8,
+    }).setOrigin(0.5).setDepth(51);
+
+    let n = 3;
+    const tick = () => {
+      n--;
+      if (n <= 0) {
+        lockBg.destroy(); countTxt.destroy();
+        this.inputLocked = false;
+      } else {
+        countTxt.setText(`${n}`);
+        this.time.delayedCall(1000, tick);
+      }
+    };
+    this.time.delayedCall(1000, tick);
+  }
+
   private startTurn(): void {
     this.phase = 'selecting';
     this.p1Action = undefined;
@@ -465,6 +493,8 @@ export class BattleScene extends Phaser.Scene {
     this.resetSprites();
     this.p1StatusText.setText('');
     this.setLog(`ターン ${this.engine.turn} — 技を選べ!`);
+
+    if (this.engine.turn === 1) this.startInputCountdown();
 
     if (this.mode === 'quest') {
       this.p2Action = this.ai.decide(this.engine, 2);
@@ -1330,8 +1360,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private makeSurvivalCpuTeam(): OwnedMonster[] {
-    const pool = (MONSTER_IDS as string[]).filter(id => id !== 'lilyenma');
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
+    const shuffled = [...(MONSTER_IDS as string[])].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, 3).map(id => ({
       uid: generateUid(), defId: id, ivs: randomIVs(),
     }));
