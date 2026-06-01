@@ -1,0 +1,14 @@
+{
+  "ownedMonsters": [
+    { "uid": "m_test_0", "defId": "chakun",     "ivs": { "hp": 100, "atk": 100, "def": 100 } },
+    { "uid": "m_test_1", "defId": "shikun",     "ivs": { "hp": 100, "atk": 100, "def": 100 } },
+    { "uid": "m_test_2", "defId": "lily",       "ivs": { "hp": 100, "atk": 100, "def": 100 } },
+    { "uid": "m_test_3", "defId": "medama",     "ivs": { "hp": 100, "atk": 100, "def": 100 } },
+    { "uid": "m_test_4", "defId": "darkking",   "ivs": { "hp": 100, "atk": 100, "def": 100 } },
+    { "uid": "m_test_5", "defId": "roncha",     "ivs": { "hp": 100, "atk": 100, "def": 100 } },
+    { "uid": "m_test_6", "defId": "darkshikun", "ivs": { "hp": 100, "atk": 100, "def": 100 } },
+    { "uid": "m_test_7", "defId": "lilyenma",   "ivs": { "hp": 100, "atk": 100, "def": 100 } }
+  ],
+  "winCount": 0,
+  "nikukyu": 99999
+}
