@@ -447,7 +447,7 @@ export class TeamSelectScene extends Phaser.Scene {
     cardCont.setMask(maskG.createGeometryMask());
     maskG.setVisible(false);
 
-    let dragging = false, dragStartY = 0, dragStartScrollY = 0, _pressY = 0;
+    let dragging = false, dragStartY = 0, dragStartScrollY = 0, _pressX = 0, _pressY = 0;
 
     const applyScroll = (y: number) => {
       scrollY = Phaser.Math.Clamp(y, 0, MAX_SCROLL);
@@ -505,8 +505,11 @@ export class TeamSelectScene extends Phaser.Scene {
 
       bg.on('pointerover', () => { if (!dragging) { bg.setFillStyle(0x2a2860); bg.setStrokeStyle(2, 0xffe066); } });
       bg.on('pointerout',  () => { bg.setFillStyle(0x1a1842); bg.setStrokeStyle(2, 0x5a4cd0); });
-      bg.on('pointerdown', () => { _pressY = this.input.activePointer.y; });
-      bg.on('pointerup',   () => { if (!dragging && Math.abs(this.input.activePointer.y - _pressY) < 8) launch(defId); });
+      bg.on('pointerdown', () => { _pressX = this.input.activePointer.x; _pressY = this.input.activePointer.y; });
+      bg.on('pointerup',   () => {
+        const moved = Math.abs(this.input.activePointer.x - _pressX) + Math.abs(this.input.activePointer.y - _pressY);
+        if (moved < 12) launch(defId);
+      });
     });
 
     skipBg.on('pointerdown', () => launch(null));

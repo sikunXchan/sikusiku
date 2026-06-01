@@ -461,17 +461,20 @@ export class BattleScene extends Phaser.Scene {
     this.inputLocked = true;
     const areaY = PANEL_Y + 10;
     const areaH = GAME_HEIGHT - areaY;
-    const lockBg = this.add.rectangle(GAME_WIDTH / 2, areaY + areaH / 2, GAME_WIDTH, areaH, 0x000000, 0.50).setDepth(50);
+    // Full-screen interactive blocker: absorbs every tap so no button/tooltip fires
+    const blocker = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0)
+      .setDepth(60).setInteractive();
+    const lockBg = this.add.rectangle(GAME_WIDTH / 2, areaY + areaH / 2, GAME_WIDTH, areaH, 0x000000, 0.50).setDepth(60);
     const countTxt = this.add.text(GAME_WIDTH / 2, areaY + areaH / 2, '3', {
       fontFamily: 'system-ui, sans-serif', fontSize: '64px', color: '#ffffff',
       fontStyle: 'bold', stroke: '#000000', strokeThickness: 8,
-    }).setOrigin(0.5).setDepth(51);
+    }).setOrigin(0.5).setDepth(61);
 
     let n = 3;
     const tick = () => {
       n--;
       if (n <= 0) {
-        lockBg.destroy(); countTxt.destroy();
+        blocker.destroy(); lockBg.destroy(); countTxt.destroy();
         this.inputLocked = false;
       } else {
         countTxt.setText(`${n}`);
