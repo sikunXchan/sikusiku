@@ -5,8 +5,7 @@ import { BattleEngine, createBattleMonster } from '../engine/BattleEngine';
 import { BattleAI } from '../ai/BattleAI';
 import { Effects } from '../fx/Effects';
 import { NetManager } from '../net/NetManager';
-import { addOwnedMonster, generateUid, loadSave, persistSave, randomIVs } from '../storage/SaveData';
-import { MONSTER_IDS } from '../data/monsters';
+import { addOwnedMonster, loadSave, persistSave, randomIVs } from '../storage/SaveData';
 import type { NetworkMsg } from '../net/messages';
 import type { BattleAction, BattleEvent, BattleMonster, MoveDef, OwnedMonster, StatusEffect, StatusEffectType, WeatherType } from '../data/types';
 
@@ -18,7 +17,7 @@ const PLAYER_X = 265;
 const PLAYER_Y = 298;
 const HP_BAR_W = 440;
 const HP_BAR_H = 18;
-const ENEMY_HP_X = 490;
+const ENEMY_HP_X = 455;
 const ENEMY_HP_Y = 36;
 const PLAYER_HP_X = 30;
 const PLAYER_HP_Y = 356;
@@ -52,12 +51,10 @@ interface MoveBtn {
 }
 
 export interface BattleSceneData {
-  mode: 'quest' | 'pvp' | 'network' | 'survival';
+  mode: 'quest' | 'pvp' | 'network';
   p1Team: OwnedMonster[];
   p2Team: OwnedMonster[];
   localPlayer?: 1 | 2;
-  survivalStreak?: number;
-  survivalHps?: number[];
 }
 
 const WEATHER_INFO: Record<WeatherType, { icon: string; name: string; color: string; desc: string }> = {
@@ -90,7 +87,7 @@ export class BattleScene extends Phaser.Scene {
   private engine!: BattleEngine;
   private ai!: BattleAI;
   private fx!: Effects;
-  private mode: 'quest' | 'pvp' | 'network' | 'survival' = 'quest';
+  private mode: 'quest' | 'pvp' | 'network' = 'quest';
   private localPlayer: 1 | 2 = 1;
 
   private phase: 'selecting' | 'revealing' | 'animating' | 'forcedSwitch' | 'forcedAttack' | 'gameOver' = 'selecting';
@@ -131,7 +128,6 @@ export class BattleScene extends Phaser.Scene {
   private p2StatusTypes: string[] = [];
   private bonusP1Action?: BattleAction;
   private bonusP2Action?: BattleAction;
-  private survivalStreak = 0;
 
   // ── Network helpers ───────────────────────────────────────────────────
   private get myActive(): BattleMonster {
@@ -184,15 +180,6 @@ export class BattleScene extends Phaser.Scene {
     this.p1Action = undefined;
     this.p2Action = undefined;
 
-    this.survivalStreak = data.survivalStreak ?? 0;
-    if (data.mode === 'survival' && data.survivalHps) {
-      data.survivalHps.forEach((hp, i) => {
-        if (i < this.engine.p1Team.length) {
-          this.engine.p1Team[i].currentHp = Math.max(0, hp);
-          if (hp <= 0) this.engine.p1Team[i].fainted = true;
-        }
-      });
-    }
     if (this.mode === 'network') {
       NetManager.onMessage = (msg: NetworkMsg) => this.handleNetMsg(msg);
       NetManager.onDisconnect = () => this.handleDisconnect();
@@ -442,18 +429,18 @@ export class BattleScene extends Phaser.Scene {
 
   private buildTeamDots(): void {
     // "自チーム" label + my dots (left group)
-    this.add.text(722, 9, '自チーム', {
+    this.add.text(718, 9, '自チーム', {
       fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#66ccff',
     }).setDepth(200);
     for (let i = 0; i < this.myTeam.length; i++) {
-      this.p1TeamDots.push(this.add.circle(760 + i * 16, 18, 7, 0x66ccff).setDepth(200));
+      this.p1TeamDots.push(this.add.circle(782 + i * 16, 18, 7, 0x66ccff).setDepth(200));
     }
     // "敵チーム" label + opp dots (right group)
-    this.add.text(820, 9, '敵チーム', {
+    this.add.text(832, 9, '敵チーム', {
       fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#ff6b6b',
     }).setDepth(200);
     for (let i = 0; i < this.oppTeam.length; i++) {
-      this.p2TeamDots.push(this.add.circle(858 + i * 16, 18, 7, 0xff6b6b).setDepth(200));
+      this.p2TeamDots.push(this.add.circle(896 + i * 16, 18, 7, 0xff6b6b).setDepth(200));
     }
   }
 
@@ -1285,27 +1272,17 @@ export class BattleScene extends Phaser.Scene {
       const save = loadSave();
       save.winCount = (save.winCount ?? 0) + 1;
       save.nikukyu  = (save.nikukyu  ?? 0) + 1000;
+      const hasLilyenma = this.engine.p1Team.some(m => m.monsterDef.id === 'lilyenma');
+      if (hasLilyenma) {
+        const newStreak = (save.lilyenmaStreak ?? 0) + 1;
+        save.lilyenmaStreak = newStreak;
+        this.time.delayedCall(200, () => this.showLilyenmaExplosions(newStreak));
+      } else {
+        save.lilyenmaStreak = 0;
+      }
       persistSave(save);
       this.time.delayedCall(500, () => this.showNikukyuToast(1000, save.nikukyu));
       this.time.delayedCall(1600, () => this.showCatchReward());
-    } else if (isWin && this.mode === 'survival') {
-      const streak = this.survivalStreak + 1;
-      const reward = 250 * streak;
-      const save = loadSave();
-      save.nikukyu = (save.nikukyu ?? 0) + reward;
-      persistSave(save);
-      this.time.delayedCall(600, () => this.showSurvivalReward(streak, reward));
-    } else if (!isWin && this.mode === 'survival' && this.survivalStreak > 0) {
-      this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 26,
-        `${this.survivalStreak}連勝でした`, {
-        fontFamily: 'system-ui, sans-serif', fontSize: '20px', color: '#ffaaaa',
-        stroke: '#000000', strokeThickness: 5,
-      }).setOrigin(0.5).setDepth(2001);
-      const hint = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 70, 'タップでタイトルへ', {
-        fontFamily: 'system-ui, sans-serif', fontSize: '20px', color: '#ffffff',
-      }).setOrigin(0.5).setDepth(2001);
-      this.tweens.add({ targets: hint, alpha: { from: 0.4, to: 1 }, duration: 700, yoyo: true, repeat: -1 });
-      this.time.delayedCall(700, () => this.input.once('pointerdown', () => this.scene.start('Title')));
     } else {
       const hint = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 62, 'タップでタイトルへ', {
         fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffffff',
@@ -1330,56 +1307,27 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.add({ targets: toast, alpha: 0, duration: 500, delay: 900, onComplete: () => toast.destroy() });
   }
 
-  private showSurvivalReward(streak: number, reward: number): void {
-    const D = 2100;
-    const PW = 460;
-    const PH = 210;
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.55).setDepth(D);
-    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(D + 1);
-    panel.add(this.add.rectangle(0, 0, PW, PH, 0x14102a).setStrokeStyle(2, 0xffe066));
-    panel.add(this.add.text(0, -PH / 2 + 28, `🎉 ${streak}連勝！`, {
-      fontFamily: 'system-ui, sans-serif', fontSize: '30px', color: '#ffe066', fontStyle: 'bold',
-    }).setOrigin(0.5));
-    if (this.textures.exists('nikukyu')) {
-      panel.add(this.add.image(-80, -4, 'nikukyu').setDisplaySize(30, 30));
-    }
-    panel.add(this.add.text(-56, -4, `+${reward}`, {
-      fontFamily: 'system-ui, sans-serif', fontSize: '26px', color: '#ffbb66', fontStyle: 'bold',
-    }).setOrigin(0, 0.5));
-
-    // Continue
-    const nextBg = this.add.rectangle(-100, PH / 2 - 30, 196, 42, 0x1a3320).setStrokeStyle(1, 0x44cc66)
-      .setInteractive({ useHandCursor: true });
-    nextBg.on('pointerover', () => nextBg.setFillStyle(0x245530));
-    nextBg.on('pointerout',  () => nextBg.setFillStyle(0x1a3320));
-    nextBg.on('pointerdown', () => {
-      const hps   = this.engine.p1Team.map(m => m.currentHp);
-      const owned = this.engine.p1Team.map(m => m.owned);
-      this.scene.start('Battle', {
-        mode: 'survival', p1Team: owned, p2Team: this.makeSurvivalCpuTeam(),
-        survivalStreak: streak, survivalHps: hps,
+  private showLilyenmaExplosions(streak: number): void {
+    const count = Math.min(streak, 10);
+    for (let i = 0; i < count; i++) {
+      this.time.delayedCall(i * 320, () => {
+        const x = Phaser.Math.Between(80, GAME_WIDTH - 80);
+        const y = Phaser.Math.Between(60, GAME_HEIGHT - 100);
+        this.fx.hitBurst(x, y, 0xff6600, true);
+        this.fx.shake(0.007, 120);
+        this.pop(x, y - 20, '💥', '#ff6600', 36);
       });
+    }
+    this.time.delayedCall(count * 320 + 200, () => {
+      const label = streak === 1
+        ? 'リリー閻魔大王で初勝利！'
+        : `リリー閻魔大王 ${streak}連勝！`;
+      const txt = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, label, {
+        fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ff9933',
+        fontStyle: 'bold', stroke: '#000000', strokeThickness: 5,
+      }).setOrigin(0.5).setDepth(2002).setScale(0);
+      this.tweens.add({ targets: txt, scale: 1, duration: 300, ease: 'Back.easeOut' });
     });
-    panel.add([nextBg, this.add.text(-100, PH / 2 - 30, '次の戦いへ →', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#88ffaa',
-    }).setOrigin(0.5)]);
-
-    // Stop
-    const stopBg = this.add.rectangle(110, PH / 2 - 30, 176, 42, 0x2a1414).setStrokeStyle(1, 0xaa4444)
-      .setInteractive({ useHandCursor: true });
-    stopBg.on('pointerover', () => stopBg.setFillStyle(0x3a2020));
-    stopBg.on('pointerout',  () => stopBg.setFillStyle(0x2a1414));
-    stopBg.on('pointerdown', () => this.scene.start('Title'));
-    panel.add([stopBg, this.add.text(110, PH / 2 - 30, 'やめる', {
-      fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#ff8888',
-    }).setOrigin(0.5)]);
-  }
-
-  private makeSurvivalCpuTeam(): OwnedMonster[] {
-    const shuffled = [...(MONSTER_IDS as string[])].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, 3).map(id => ({
-      uid: generateUid(), defId: id, ivs: randomIVs(),
-    }));
   }
 
   private showCatchReward(): void {

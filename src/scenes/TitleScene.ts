@@ -37,24 +37,45 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private buildMenu(): void {
-    // 2 cols × 3 rows
     const BTN_W  = 445;
     const BTN_H  = 54;
     const GAP_X  = 20;
     const ROW_YS = [388, 450, 512];
     const LX = GAME_WIDTH / 2 - BTN_W / 2 - GAP_X / 2;
     const RX = GAME_WIDTH / 2 + BTN_W / 2 + GAP_X / 2;
+    const BTN_W_FULL = BTN_W * 2 + GAP_X;
 
+    // Row 1: Quest (full width, centered)
+    const questBg = this.add.rectangle(GAME_WIDTH / 2, ROW_YS[0], BTN_W_FULL, BTN_H, 0x66ccff, 0.12)
+      .setStrokeStyle(2, 0x66ccff, 0.7).setInteractive({ useHandCursor: true });
+    const questLabel = this.add.text(GAME_WIDTH / 2, ROW_YS[0] - 10, '🌿 クエスト', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '22px', color: '#ffffff', fontStyle: 'bold',
+    }).setOrigin(0.5);
+    const questSub = this.add.text(GAME_WIDTH / 2, ROW_YS[0] + 14, 'モンスターを倒して仲間にしよう', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#aaaaaa',
+    }).setOrigin(0.5);
+    const questLabelY0 = questLabel.y;
+    const questSubY0   = questSub.y;
+    questBg.on('pointerover', () => {
+      questBg.setAlpha(0.30);
+      this.tweens.killTweensOf(questLabel); this.tweens.killTweensOf(questSub);
+      this.tweens.add({ targets: questLabel, y: questLabelY0 - 3, duration: 80 });
+      this.tweens.add({ targets: questSub,   y: questSubY0   - 3, duration: 80 });
+    });
+    questBg.on('pointerout', () => {
+      questBg.setAlpha(0.12);
+      this.tweens.killTweensOf(questLabel); this.tweens.killTweensOf(questSub);
+      this.tweens.add({ targets: questLabel, y: questLabelY0, duration: 80 });
+      this.tweens.add({ targets: questSub,   y: questSubY0,   duration: 80 });
+    });
+    questBg.on('pointerdown', () => this.startMode());
+
+    // Row 2-3: 2-column buttons
     const buttons = [
-      // Row 1
-      { label: '🌿 クエスト',      sub: 'モンスターを倒して仲間に', color: 0x66ccff, x: LX, y: ROW_YS[0], action: () => this.startMode('quest')    },
-      { label: '⚔️ サバイバル',    sub: 'HP持越しで連勝に挑戦',     color: 0xff8844, x: RX, y: ROW_YS[0], action: () => this.startMode('survival') },
-      // Row 2
-      { label: '📦 マイモンスター', sub: '所持モンスター一覧',         color: 0xffd700, x: LX, y: ROW_YS[1], action: () => this.openMonsterList()    },
-      { label: '📖 図鑑',          sub: '全モンスターを確認',          color: 0x88ffcc, x: RX, y: ROW_YS[1], action: () => this.openEncyclopedia()   },
-      // Row 3
-      { label: '📡 ちかくで対戦', sub: '別デバイスで無線対戦',        color: 0xcc88ff, x: LX, y: ROW_YS[2], action: () => this.openLobby()          },
-      { label: '🛒 ショップ',      sub: 'にくきゅうでアイテムを購入', color: 0xffaa44, x: RX, y: ROW_YS[2], action: () => this.openShop()           },
+      { label: '📦 マイモンスター', sub: '所持モンスター一覧',         color: 0xffd700, x: LX, y: ROW_YS[1], action: () => this.openMonsterList()  },
+      { label: '📖 図鑑',          sub: '全モンスターを確認',          color: 0x88ffcc, x: RX, y: ROW_YS[1], action: () => this.openEncyclopedia() },
+      { label: '📡 ちかくで対戦', sub: '別デバイスで無線対戦',        color: 0xcc88ff, x: LX, y: ROW_YS[2], action: () => this.openLobby()         },
+      { label: '🛒 ショップ',      sub: 'にくきゅうでアイテムを購入', color: 0xffaa44, x: RX, y: ROW_YS[2], action: () => this.openShop()          },
     ];
 
     for (const btn of buttons) {
@@ -66,8 +87,20 @@ export class TitleScene extends Phaser.Scene {
       const sub = this.add.text(btn.x, btn.y + 14, btn.sub, {
         fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#aaaaaa',
       }).setOrigin(0.5);
-      bg.on('pointerover', () => { bg.setAlpha(0.30); this.tweens.add({ targets: [label, sub], y: { value: '-=3' }, duration: 80 }); });
-      bg.on('pointerout',  () => { bg.setAlpha(0.12); label.y += 3; sub.y += 3; });
+      const labelY0 = label.y;
+      const subY0   = sub.y;
+      bg.on('pointerover', () => {
+        bg.setAlpha(0.30);
+        this.tweens.killTweensOf(label); this.tweens.killTweensOf(sub);
+        this.tweens.add({ targets: label, y: labelY0 - 3, duration: 80 });
+        this.tweens.add({ targets: sub,   y: subY0   - 3, duration: 80 });
+      });
+      bg.on('pointerout', () => {
+        bg.setAlpha(0.12);
+        this.tweens.killTweensOf(label); this.tweens.killTweensOf(sub);
+        this.tweens.add({ targets: label, y: labelY0, duration: 80 });
+        this.tweens.add({ targets: sub,   y: subY0,   duration: 80 });
+      });
       bg.on('pointerdown', btn.action);
     }
   }
@@ -222,9 +255,9 @@ export class TitleScene extends Phaser.Scene {
     };
   }
 
-  private startMode(mode: 'quest' | 'survival'): void {
+  private startMode(): void {
     const save = loadSave();
-    this.scene.start('TeamSelect', { mode, save, playerNum: 1, p1Team: null });
+    this.scene.start('TeamSelect', { mode: 'quest', save, playerNum: 1, p1Team: null });
   }
 
   private openLobby():        void { this.scene.start('Lobby'); }

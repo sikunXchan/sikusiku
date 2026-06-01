@@ -4,6 +4,7 @@ export interface GameSave {
   ownedMonsters: OwnedMonster[];
   winCount: number;
   nikukyu: number;
+  lilyenmaStreak?: number;
 }
 
 const SAVE_KEY = 'sikusiku_save_v2';
@@ -41,6 +42,7 @@ export function loadSave(): GameSave {
       const save = JSON.parse(raw) as GameSave;
       if (save.winCount === undefined) save.winCount = 0;
       if (save.nikukyu === undefined) save.nikukyu = 0;
+      if (save.lilyenmaStreak === undefined) save.lilyenmaStreak = 0;
       return save;
     }
   } catch {

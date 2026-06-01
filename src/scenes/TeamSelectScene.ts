@@ -9,7 +9,7 @@ import { NetManager } from '../net/NetManager';
 import type { NetworkMsg } from '../net/messages';
 
 export interface TeamSelectData {
-  mode: 'quest' | 'pvp' | 'network' | 'survival';
+  mode: 'quest' | 'pvp' | 'network';
   save: GameSave;
   playerNum: 1 | 2;
   p1Team: OwnedMonster[] | null;
@@ -59,11 +59,9 @@ export class TeamSelectScene extends Phaser.Scene {
     const playerLabel = this.sceneData.playerNum === 1 ? 'P1' : 'P2';
     const modeLabel = this.sceneData.mode === 'quest'
       ? 'クエスト'
-      : this.sceneData.mode === 'survival'
-        ? 'サバイバル'
-        : this.sceneData.mode === 'network'
-          ? `無線対戦 (${this.sceneData.localPlayer === 1 ? 'ホスト' : 'ゲスト'})`
-          : `バトル (${playerLabel})`;
+      : this.sceneData.mode === 'network'
+        ? `無線対戦 (${this.sceneData.localPlayer === 1 ? 'ホスト' : 'ゲスト'})`
+        : `バトル (${playerLabel})`;
 
     this.add.text(GAME_WIDTH / 2, 20, `チームを選べ — ${modeLabel}`, {
       fontFamily: 'system-ui, sans-serif',
@@ -370,11 +368,6 @@ export class TeamSelectScene extends Phaser.Scene {
       this.showTargetSelection(selectedTeam);
       return;
 
-    } else if (this.sceneData.mode === 'survival') {
-      const cpuTeam = this.buildRandomCpuTeam();
-      this.scene.start('Battle', { mode: 'survival', p1Team: selectedTeam, p2Team: cpuTeam, survivalStreak: 0 });
-      return;
-
     } else if (this.sceneData.mode === 'network') {
       this.confirmNetworkTeam(selectedTeam);
 
@@ -385,14 +378,6 @@ export class TeamSelectScene extends Phaser.Scene {
     } else {
       this.scene.start('Battle', { mode: 'pvp', p1Team: this.sceneData.p1Team!, p2Team: selectedTeam });
     }
-  }
-
-  private buildRandomCpuTeam(): OwnedMonster[] {
-    const pool = (MONSTER_IDS as string[]).filter(id => id !== 'lilyenma');
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    return shuffled.slice(0, TEAM_SIZE).map(id => ({
-      uid: generateUid(), defId: id, ivs: randomIVs(),
-    }));
   }
 
   private showTargetSelection(playerTeam: OwnedMonster[]): void {

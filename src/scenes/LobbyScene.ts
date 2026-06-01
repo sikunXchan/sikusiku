@@ -128,8 +128,8 @@ export class LobbyScene extends Phaser.Scene {
     } else if (this.inputChars.length < 6) {
       this.inputChars.push(ch);
     }
-    const padded = this.inputChars.join(' ').padEnd(11, ' _ ');
-    this.inputDisplay.setText(padded.slice(0, 11));
+    const display = Array.from({ length: 6 }, (_, i) => this.inputChars[i] ?? '_').join(' ');
+    this.inputDisplay.setText(display);
   }
 
   private async startHost(): Promise<void> {
