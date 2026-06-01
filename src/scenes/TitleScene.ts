@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../main';
-import { loadSave } from '../storage/SaveData';
+import { loadSave, persistSave } from '../storage/SaveData';
+import type { GameSave } from '../storage/SaveData';
 
 export class TitleScene extends Phaser.Scene {
   constructor() { super('Title'); }
@@ -10,6 +11,7 @@ export class TitleScene extends Phaser.Scene {
     this.buildTitle();
     this.buildMenu();
     this.buildNikukyuBadge();
+    this.buildGearButton();
   }
 
   private buildBackground(): void {
@@ -73,12 +75,106 @@ export class TitleScene extends Phaser.Scene {
   private buildNikukyuBadge(): void {
     const save = loadSave();
     if (this.textures.exists('nikukyu')) {
-      this.add.image(GAME_WIDTH - 58, 30, 'nikukyu').setDisplaySize(28, 28);
+      this.add.image(GAME_WIDTH - 58, 22, 'nikukyu').setDisplaySize(28, 28);
     }
-    this.add.text(GAME_WIDTH - 38, 30, `×${save.nikukyu ?? 0}`, {
+    this.add.text(GAME_WIDTH - 38, 22, `×${save.nikukyu ?? 0}`, {
       fontFamily: 'system-ui, sans-serif', fontSize: '17px', color: '#ffbb88',
       stroke: '#000000', strokeThickness: 4,
     }).setOrigin(0, 0.5);
+  }
+
+  private buildGearButton(): void {
+    const btn = this.add.text(GAME_WIDTH - 12, 50, '⚙️', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '20px',
+    }).setOrigin(1, 0.5).setInteractive({ useHandCursor: true }).setAlpha(0.65);
+    btn.on('pointerover', () => btn.setAlpha(1));
+    btn.on('pointerout',  () => btn.setAlpha(0.65));
+    btn.on('pointerdown', () => this.showSettingsModal());
+  }
+
+  private showSettingsModal(): void {
+    const D = 500;
+    const PW = 300;
+    const PH = 190;
+
+    const overlay = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.60)
+      .setDepth(D).setInteractive();
+    const panel = this.add.container(GAME_WIDTH / 2, GAME_HEIGHT / 2).setDepth(D + 1);
+    panel.add(this.add.rectangle(0, 0, PW, PH, 0x16142a).setStrokeStyle(2, 0x555577));
+    panel.add(this.add.text(0, -PH / 2 + 22, '⚙️ セーブデータ', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '15px', color: '#ccccdd', fontStyle: 'bold',
+    }).setOrigin(0.5));
+
+    const close = () => { overlay.destroy(); panel.destroy(); };
+
+    // Download button
+    const dlBg = this.add.rectangle(0, -22, PW - 40, 42, 0x1a2235).setStrokeStyle(1, 0x4466aa);
+    dlBg.setInteractive({ useHandCursor: true });
+    dlBg.on('pointerover', () => dlBg.setFillStyle(0x223050));
+    dlBg.on('pointerout',  () => dlBg.setFillStyle(0x1a2235));
+    dlBg.on('pointerdown', () => { close(); this.downloadSave(); });
+    panel.add([dlBg, this.add.text(0, -22, '📤 ダウンロード', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#99bbff',
+    }).setOrigin(0.5)]);
+
+    // Load button
+    const ldBg = this.add.rectangle(0, 34, PW - 40, 42, 0x1a2235).setStrokeStyle(1, 0x4466aa);
+    ldBg.setInteractive({ useHandCursor: true });
+    ldBg.on('pointerover', () => ldBg.setFillStyle(0x223050));
+    ldBg.on('pointerout',  () => ldBg.setFillStyle(0x1a2235));
+    ldBg.on('pointerdown', () => { close(); this.loadSaveFromFile(); });
+    panel.add([ldBg, this.add.text(0, 34, '📥 読み込み', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#99bbff',
+    }).setOrigin(0.5)]);
+
+    // Close button
+    const closeBtn = this.add.text(PW / 2 - 10, -PH / 2 + 12, '✕', {
+      fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#ff6666',
+    }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    closeBtn.on('pointerdown', close);
+    panel.add(closeBtn);
+
+    overlay.on('pointerdown', close);
+  }
+
+  private downloadSave(): void {
+    const save = loadSave();
+    const blob = new Blob([JSON.stringify(save, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sikusiku_save.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  private loadSaveFromFile(): void {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const save = JSON.parse(reader.result as string) as GameSave;
+          if (!Array.isArray(save.ownedMonsters)) throw new Error('invalid');
+          if (save.winCount  === undefined) save.winCount  = 0;
+          if (save.nikukyu   === undefined) save.nikukyu   = 0;
+          persistSave(save);
+          this.scene.restart();
+        } catch {
+          // ファイルが不正な場合は何もしない
+        }
+      };
+      reader.readAsText(file);
+    };
+    document.body.appendChild(input);
+    input.click();
+    document.body.removeChild(input);
   }
 
   private startMode(mode: 'quest' | 'survival'): void {
@@ -86,8 +182,8 @@ export class TitleScene extends Phaser.Scene {
     this.scene.start('TeamSelect', { mode, save, playerNum: 1, p1Team: null });
   }
 
-  private openLobby():       void { this.scene.start('Lobby'); }
-  private openMonsterList(): void { this.scene.start('MonsterList', { save: loadSave() }); }
+  private openLobby():        void { this.scene.start('Lobby'); }
+  private openMonsterList():  void { this.scene.start('MonsterList', { save: loadSave() }); }
   private openEncyclopedia(): void { this.scene.start('Encyclopedia'); }
-  private openShop():        void { this.scene.start('Shop'); }
+  private openShop():         void { this.scene.start('Shop'); }
 }
