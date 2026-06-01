@@ -20,6 +20,8 @@ export default defineConfig({
         // Phaser のバンドルが大きいので上限を引き上げてプリキャッシュ
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         globPatterns: ['**/*.{js,css,html,png,svg,webmanifest}'],
+        // 実行時に未使用のアイコン元画像はプリキャッシュ対象外(低スペック端末の負荷軽減)
+        globIgnores: ['**/app-icon-src.png', '**/524C4B73-81E4-4470-AF7E-45C79329D1BC.png'],
       },
       manifest: {
         name: 'しくん & ちゃくん バトル',
