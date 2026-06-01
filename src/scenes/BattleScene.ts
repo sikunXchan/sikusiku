@@ -152,6 +152,10 @@ export class BattleScene extends Phaser.Scene {
   private get oppTeam(): BattleMonster[] {
     return this.localPlayer === 1 ? this.engine.p2Team : this.engine.p1Team;
   }
+  /** その player 番号が「自分(画面下)」側かどうか */
+  private isMe(player: 1 | 2): boolean {
+    return player === this.localPlayer;
+  }
   private get myAction(): BattleAction | undefined {
     return this.localPlayer === 1 ? this.p1Action : this.p2Action;
   }
@@ -745,17 +749,17 @@ export class BattleScene extends Phaser.Scene {
   // ── Animations ────────────────────────────────────────────────────────
 
   private aSwitch(player: 1|2, toIdx: number, done: () => void): void {
-    const sp = player === 1 ? this.playerSprite : this.enemySprite;
-    const origX = player === 1 ? PLAYER_X : ENEMY_X;
-    const dir = player === 1 ? -1 : 1;
+    const sp = this.isMe(player) ? this.playerSprite : this.enemySprite;
+    const origX = this.isMe(player) ? PLAYER_X : ENEMY_X;
+    const dir = this.isMe(player) ? -1 : 1;
     const mon = (player === 1 ? this.engine.p1Team : this.engine.p2Team)[toIdx];
-    const key = player === 1 ? mon.monsterDef.backSprite : mon.monsterDef.frontSprite;
+    const key = this.isMe(player) ? mon.monsterDef.backSprite : mon.monsterDef.frontSprite;
     this.setLog(`${mon.monsterDef.name} 登場!`);
     this.tweens.add({
       targets: sp, x: origX + dir * 200, alpha: 0, duration: 360,
       onComplete: () => {
         sp.setTexture(key);
-        this.fitSprite(sp, player === 1 ? PLAYER_MAX_W : ENEMY_MAX_W, player === 1 ? PLAYER_MAX_H : ENEMY_MAX_H);
+        this.fitSprite(sp, this.isMe(player) ? PLAYER_MAX_W : ENEMY_MAX_W, this.isMe(player) ? PLAYER_MAX_H : ENEMY_MAX_H);
         sp.setAlpha(0).setX(origX - dir * 200);
         this.tweens.add({
           targets: sp, x: origX, alpha: 1, duration: 380, ease: 'Cubic.easeOut',
@@ -766,9 +770,9 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aDodge(player: 1|2, done: () => void): void {
-    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const sp = this.isMe(player) ? this.playerSprite : this.enemySprite;
     const origX = sp.x;
-    const dir = player === 1 ? -1 : 1;
+    const dir = this.isMe(player) ? -1 : 1;
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
     this.setLog(`${mon.monsterDef.name} の かわす!`);
     const ghost = this.add.image(origX, sp.y, sp.texture.key)
@@ -787,8 +791,8 @@ export class BattleScene extends Phaser.Scene {
     player: 1|2, moveId: string, damage: number,
     critical: boolean, dodged: boolean, chainCount: number, done: () => void,
   ): void {
-    const atkSp = player === 1 ? this.playerSprite : this.enemySprite;
-    const defSp = player === 1 ? this.enemySprite : this.playerSprite;
+    const atkSp = this.isMe(player) ? this.playerSprite : this.enemySprite;
+    const defSp = this.isMe(player) ? this.enemySprite : this.playerSprite;
     const atk = player === 1 ? this.engine.p1Active : this.engine.p2Active;
     const move = getMove(moveId);
     const origX = atkSp.x;
@@ -802,7 +806,7 @@ export class BattleScene extends Phaser.Scene {
       return;
     }
 
-    const rushX = player === 1 ? defSp.x - 110 : defSp.x + 110;
+    const rushX = this.isMe(player) ? defSp.x - 110 : defSp.x + 110;
     this.tweens.add({
       targets: atkSp, x: rushX, duration: 290, ease: 'Cubic.easeIn',
       onComplete: () => {
@@ -815,7 +819,7 @@ export class BattleScene extends Phaser.Scene {
         if (chainCount > 1) this.pop(defSp.x, defSp.y - 125, `${chainCount}連鎖！`, '#ff6600', 18);
         if (moveId === 'shikken') this.pop(atkSp.x, atkSp.y - 75, '防御低下!', '#ffaa55', 15);
         this.syncAllHpBars();
-        const kdir = player === 1 ? 1 : -1;
+        const kdir = this.isMe(player) ? 1 : -1;
         this.tweens.add({ targets: defSp, x: defSp.x + kdir * 28, duration: 75, yoyo: true });
         this.tweens.add({
           targets: atkSp, x: origX, duration: 260, ease: 'Cubic.easeOut',
@@ -826,7 +830,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aBuff(player: 1|2, moveId: string, desc: string, done: () => void): void {
-    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const sp = this.isMe(player) ? this.playerSprite : this.enemySprite;
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
     this.setLog(`${mon.monsterDef.name}: ${desc}`);
 
@@ -870,7 +874,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aAtkDebuff(target: 1|2, done: () => void): void {
-    const sp = target === 1 ? this.playerSprite : this.enemySprite;
+    const sp = this.isMe(target) ? this.playerSprite : this.enemySprite;
     const mon = target === 1 ? this.engine.p1Active : this.engine.p2Active;
     this.setLog(`${mon.monsterDef.name} の こうげきが さがった!`);
     const aura = this.add.circle(sp.x, sp.y, 50, 0x880000, 0.3).setBlendMode(Phaser.BlendModes.ADD);
@@ -888,8 +892,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aCounter(player: 1|2, damage: number, failed: boolean, done: () => void): void {
-    const sp = player === 1 ? this.playerSprite : this.enemySprite;
-    const defSp = player === 1 ? this.enemySprite : this.playerSprite;
+    const sp = this.isMe(player) ? this.playerSprite : this.enemySprite;
+    const defSp = this.isMe(player) ? this.enemySprite : this.playerSprite;
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
 
     if (failed) {
@@ -916,8 +920,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aOhko(player: 1|2, succeeded: boolean, done: () => void): void {
-    const atkSp = player === 1 ? this.playerSprite : this.enemySprite;
-    const defSp = player === 1 ? this.enemySprite : this.playerSprite;
+    const atkSp = this.isMe(player) ? this.playerSprite : this.enemySprite;
+    const defSp = this.isMe(player) ? this.enemySprite : this.playerSprite;
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
 
     if (!succeeded) {
@@ -949,7 +953,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aStatusApply(target: 1|2, statusType: StatusEffectType, done: () => void): void {
-    const sp = target === 1 ? this.playerSprite : this.enemySprite;
+    const sp = this.isMe(target) ? this.playerSprite : this.enemySprite;
     const labels: Record<string, [string, number]> = {
       burn:     ['🔥 やけど!',    0xff4400],
       paralyze: ['⚡ まひ!',      0xffee00],
@@ -967,7 +971,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aStatusTick(player: 1|2, statusType: StatusEffectType, damage: number, done: () => void): void {
-    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const sp = this.isMe(player) ? this.playerSprite : this.enemySprite;
     const colors: Record<string, number> = { burn: 0xff4400, poison: 0x88ff44, paralyze: 0xffee00, confuse: 0xff88ff };
     const col = `#${(colors[statusType] ?? 0xffffff).toString(16).padStart(6,'0')}`;
     if (statusType === 'paralyze') {
@@ -983,8 +987,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aConditional(player: 1|2, damage: number, dodged: boolean, done: () => void): void {
-    const defSp = player === 1 ? this.enemySprite : this.playerSprite;
-    const atkSp = player === 1 ? this.playerSprite : this.enemySprite;
+    const defSp = this.isMe(player) ? this.enemySprite : this.playerSprite;
+    const atkSp = this.isMe(player) ? this.playerSprite : this.enemySprite;
     const atk = player === 1 ? this.engine.p1Active : this.engine.p2Active;
     const def = player === 1 ? this.engine.p2Active : this.engine.p1Active;
 
@@ -1007,7 +1011,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aHeal(player: 1|2, amount: number, done: () => void): void {
-    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const sp = this.isMe(player) ? this.playerSprite : this.enemySprite;
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
     this.setLog(`${mon.monsterDef.name} のHP が回復した!`);
     // Green rising particles
@@ -1025,8 +1029,8 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aShieldBreak(defPlayer: 1|2, reflectDamage: number, done: () => void): void {
-    const defSp = defPlayer === 1 ? this.playerSprite : this.enemySprite;
-    const atkSp = defPlayer === 1 ? this.enemySprite : this.playerSprite;
+    const defSp = this.isMe(defPlayer) ? this.playerSprite : this.enemySprite;
+    const atkSp = this.isMe(defPlayer) ? this.enemySprite : this.playerSprite;
     const mon = defPlayer === 1 ? this.engine.p1Active : this.engine.p2Active;
     this.setLog(`${mon.monsterDef.name} のシールドが割れた! ${reflectDamage}ダメ反射!`);
     // Shield shatter effect on defender
@@ -1052,7 +1056,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aSacrifice(player: 1|2, revived: boolean, allyIdx: number, done: () => void): void {
-    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const sp = this.isMe(player) ? this.playerSprite : this.enemySprite;
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
     const team = player === 1 ? this.engine.p1Team : this.engine.p2Team;
     const allyName = allyIdx >= 0 ? team[allyIdx].monsterDef.name : '?';
@@ -1076,14 +1080,14 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private aWeatherTick(player: 1|2, damage: number, done: () => void): void {
-    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const sp = this.isMe(player) ? this.playerSprite : this.enemySprite;
     this.pop(sp.x, sp.y - 70, `-${damage}`, '#aaaaff', 18);
     this.syncAllHpBars();
     this.time.delayedCall(420, done);
   }
 
   private aFaint(player: 1|2, done: () => void): void {
-    const sp = player === 1 ? this.playerSprite : this.enemySprite;
+    const sp = this.isMe(player) ? this.playerSprite : this.enemySprite;
     const mon = player === 1 ? this.engine.p1Active : this.engine.p2Active;
     this.setLog(`${mon.monsterDef.name} は たおれた!`);
     this.syncAllHpBars();
